@@ -12,6 +12,7 @@ dependencies = [
     "pygam",
     "prophet",
     "statsmodels",
+    "scikit-learn",
 ]
 
 [project.optional-dependencies]
