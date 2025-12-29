@@ -17,7 +17,7 @@ The primary danger in covariate adjustment is the "kitchen sink" regression fall
 Therefore, the methods detailed herein are evaluated not just on their predictive accuracy (RMSE), but on their structural validity: their ability to distinguish between a shared trend and a true causal mechanism. We categorize these methods into four distinct paradigms:
 
 *   **Semi-Parametric Smoothing (GAMs):** Utilizing penalized B-splines to capture non-linear physical or economic relationships without rigid functional form assumptions.
-*   **State-Space & Dynamic Regression (ARIMAX):** Utilizing the Kalman filter and differencing to handle autocorrelation and linear exogenous effects.
+*   **State-Space & Dynamic Regression (ARIMAX/TVP):** Utilizing the Kalman filter to handle autocorrelation, time-varying parameters, and cointegration.
 *   **Bayesian Decomposition (Prophet/BSTS):** Utilizing additive component models with priors to separate calendar effects and regressors automatically.
 *   **Causal Machine Learning (Double ML):** Utilizing orthogonalization to isolate effects in high-dimensional settings where confounding is a primary concern.
 
@@ -132,9 +132,13 @@ gam.gridsearch(X, t0, lam=np.logspace(-3, 3, 11))
 
 # Get the partial dependence for the observed covariate values
 # term=0 corresponds to s(0) i.e., the covariate
+# meshgrid=False ensures we get the effect for the specific X rows, not a grid
 pd_effect = gam.partial_dependence(term=0, X=X, meshgrid=False)
 
-# NOTE: partial_dependence might return shape (n, 1) or (n,). Ensure 1D.
+# NOTE: pygam partial dependence is centered (zero mean).
+# If the covariate effect is conceptually additive (shift), you may need
+# to adjust for the intercept or ensure the mean of t1 is handled correctly.
+# For strictly removing the *variation* driven by X, subtraction is sufficient.
 pd_effect = pd_effect.flatten()
 
 # ---------------------------------------------------------
@@ -185,7 +189,7 @@ When using `gam.partial_dependence()`, it is critical to understand the `meshgri
 *   `meshgrid=True` (Default): The function generates a grid of hypothetical values for the feature and computes the effect. This is useful for plotting the shape of the function.
 *   `meshgrid=False`: The function computes the effect for the actual values provided in X. For covariate adjustment (generating $t_1$), this is required. We need the effect vector corresponding exactly to the observed time steps.
 
-Furthermore, GAM terms are identifiable only up to a constant (intercept). pygam typically centers the partial dependence plots (zero mean). When performing $t_1 = t_0 - \hat{f}(X)$, the resulting $t_1$ will retain the global mean of $t_0$. If the covariate effect is conceptually "additive" (e.g., a bonus added to a base salary), this centering is appropriate. If the goal is to shift the baseline, manual intercept adjustment may be required.
+Identifiability and Centering: GAM terms are typically identifiable only up to a constant (intercept). pygam and most implementations return "centered" partial effects (mean zero). If you subtract this centered effect, the resulting $t_1$ will preserve the global mean of $t_0$. If the covariate effect is structurally defined as having a non-zero baseline (e.g., a baseline temperature of 0 degrees implies 0 effect, but the data average is 20 degrees), you may need to manually adjust the intercept using `gam.coef_[-1]` or by recentering the effect based on domain knowledge.
 
 ### 2.5 Pros and Cons: GAMs
 
@@ -256,12 +260,14 @@ def arimax_adjust(target_series, exog_series, order=(1,1,1), seasonal_order=(0,0
     results = model.fit(disp=False)
 
     # 3. Extract Coefficients
-    # The 'params' series contains coefficients for AR, MA, Sigma, and Exog.
-    # We need to filter for the exogenous coefficients.
-
-    # Identify exogenous columns
+    # We explicitly filter for exogenous parameters to avoid grabbing AR/MA terms.
+    # Method A: Using parameter names (robust)
+    # The param names usually contain the column names of the exog matrix.
     exog_names = exog.columns
     exog_params = results.params[exog_names]
+
+    # Method B: Using slice (if structure is known, typically params are trend -> exog -> ar -> ma)
+    # exog_params = results.params[model.k_trend : model.k_trend + model.k_exog]
 
     # 4. Calculate the Component
     # Dot product of Exog Matrix and Coefficients
@@ -285,9 +291,7 @@ SARIMAX models often use differencing ($d=1$) to achieve stationarity. When $d=1
 
 $$\Delta Y_t = \beta \Delta X_t + \Delta \text{error}$$
 
-If one simply subtracts $\hat{\beta} X_t$ from the original $Y_t$, it assumes the relationship holds in levels. However, if the variables are cointegrated, this is valid. If they are merely sharing a stochastic trend without cointegration, the regression in levels is spurious, and the differenced model is correct.
-
-**Best Practice:** If $d=1$ is required for the model to fit, the "adjustment" should essentially effectively remove the changes driven by $X$. Reconstructing the adjusted level series $t_1$ requires careful cumulative summation of the adjusted differences, anchored to the initial observation.
+If one simply subtracts $\hat{\beta} X_t$ from the original $Y_t$, it assumes the relationship holds in levels. If $Y$ and $X$ are merely sharing a stochastic trend without cointegration, regression in levels is spurious, and the differenced model is correct. However, if they are cointegrated, the differenced model discards the long-run equilibrium relationship.
 
 ### 3.5 Pros and Cons: ARIMAX
 
@@ -295,13 +299,42 @@ If one simply subtracts $\hat{\beta} X_t$ from the original $Y_t$, it assumes th
 | :--- | :--- |
 | **Autocorrelation** | **Pro:** Unlike OLS, SARIMAX accounts for serial correlation in residuals. This prevents underestimation of standard errors and ensures $\hat{\beta}$ is consistent (though not efficient) even if residuals are correlated. |
 | **Linearity** | **Con:** Strictly linear. If the effect is saturating (diminishing returns), ARIMAX will fit a straight line, overestimating effect at high values and underestimating at low values. |
-| **Stationarity** | **Con:** Strict requirement for stationarity. If $Y$ and $X$ have different orders of integration, the model specification becomes complex (requiring Vector Error Correction Models - VECM). |
+| **Stationarity** | **Con:** Strict requirement for stationarity. If $Y$ and $X$ have different orders of integration, the model specification becomes complex (requiring Vector Error Correction Models). |
+
+### 3.6 Cointegration and Error Correction (VECM)
+
+When both the target $Y_t$ and covariate $X_t$ are non-stationary (I(1)) but share a common stochastic trend, they are cointegrated. In this scenario, simple differencing removes the valuable long-run relationship, while simple regression in levels risks spurious correlation.
+
+The Vector Error Correction Model (VECM) is the mathematically correct framework here. It models both the short-run dynamics ($\Delta X_t, \Delta Y_t$) and the adjustment toward the long-run equilibrium ($Y_t - \beta X_t$).
+
+To generate $t_1$ (the series with the long-run effect of $X$ removed):
+1.  Test for cointegration (e.g., Johansen Test).
+2.  Fit a VECM.
+3.  Identify the cointegrating vector $\beta$.
+4.  Subtract the long-run component: $t_1 = Y_t - \hat{\beta} X_t$.
+
+In Python, this is handled via `statsmodels.tsa.vector_ar.vecm`. This method is essential for environmental and economic data where systems tend to move together over decades.
+
+### 3.7 Time-Varying Coefficients (State Space Models)
+
+Standard regression assumes the covariate effect $\beta$ is constant over time. However, in many real-world systems, sensitivity changes (e.g., price elasticity changes as a brand matures).
+
+Time-Varying Parameter (TVP) models allow $\beta_t$ to evolve, typically as a random walk:
+
+$$Y_t = \beta_t X_t + \epsilon_t$$
+$$\beta_t = \beta_{t-1} + \eta_t$$
+
+These are estimated using the Kalman Filter. To generate $t_1$, one extracts the smoothed state vector series $\hat{\beta}_t$ and computes:
+
+$$t_1 = Y_t - \hat{\beta}_t X_t$$
+
+Python's `statsmodels.tsa.statespace.structural.UnobservedComponents` or PyKalman can implement this, offering a dynamic adjustment that standard ARIMAX cannot match.
 
 ## 4. Bayesian Component Decomposition (Prophet)
 
 ### 4.1 Decomposable Models by Design
 
-Facebook's Prophet library was engineered specifically for the task of decomposition. Unlike ARIMA, which focuses on the correlation structure of the error term, Prophet frames the problem as a curve-fitting exercise using a Generalized Additive Model formulation (distinct from pygam in its specific choice of components).
+Facebook's Prophet library was engineered specifically for the task of decomposition. Unlike ARIMA, which focuses on the correlation structure of the error term, Prophet frames the problem as a curve-fitting exercise using a Generalized Additive Model formulation.
 
 The Prophet equation is:
 
@@ -312,8 +345,6 @@ Where:
 *   $s(t)$: Periodic changes (seasonality) modeled via Fourier series.
 *   $h(t)$: Holiday effects (dictionary of dates).
 *   $\beta X_t$: Exogenous regressors.
-
-Because the model is explicitly a sum of components, generating $t_1$ is a native operation: one simply extracts the component column corresponding to the covariate and subtracts it.
 
 ### 4.2 Handling "Business" Covariates
 
@@ -343,7 +374,6 @@ def prophet_remove_regressor(df, target_col, date_col, regressor_col):
     m = Prophet(interval_width=0.95)
 
     # 3. Add Regressor
-    # This tells Prophet to estimate a coefficient for this column
     m.add_regressor(regressor_col)
 
     # 4. Fit Model
@@ -354,12 +384,14 @@ def prophet_remove_regressor(df, target_col, date_col, regressor_col):
     forecast = m.predict(df_prophet)
 
     # 6. Extract the Regressor Component
-    # The forecast df has a column with the same name as the regressor
-    # or 'extra_regressors_additive' if multiple are aggregated.
-    # To be precise, we look for the specific column.
-
-    # Prophet calculates the term: beta * X(t)
-    regressor_effect = forecast[regressor_col]
+    # Prophet stores the additive term for the regressor in a column with the same name
+    # Or in 'extra_regressors_additive' if aggregated.
+    # Check forecast columns to be safe.
+    if regressor_col in forecast.columns:
+        regressor_effect = forecast[regressor_col]
+    else:
+        # Fallback if multiple regressors are aggregated
+        regressor_effect = forecast['extra_regressors_additive']
 
     # 7. Generate t1 (Adjusted Series)
     # t1 = Actuals - Effect
@@ -377,14 +409,6 @@ def prophet_remove_regressor(df, target_col, date_col, regressor_col):
 
 For deeper analysis, one might want the actual $\beta$ coefficient to understand the "lift" per unit of X. Prophet provides `regressor_coefficients(m)` to retrieve these parameters. This allows validation: if the coefficient for "Price" is positive (suggesting higher price $\to$ higher sales), the model might be confounded, and removing this effect would be erroneous.
 
-### 4.5 Pros and Cons: Prophet
-
-| Feature | Analysis |
-| :--- | :--- |
-| **Automation** | **Pro:** Handles missing data, outliers, and trend shifts (changepoints) automatically. Very low barrier to entry for analysts. |
-| **Components** | **Pro:** Native decomposition. The output explicitly separates Trend, Seasonality, and Regressors. |
-| **Rigidity** | **Con:** Regressors are treated linearly (additive) or log-linearly (multiplicative). It does not natively support complex non-linear transforms (like splines) on regressors without manual feature engineering (e.g., creating a separate column for $X^2$). |
-
 ## 5. Machine Learning & Residualization (Random Forests / Gradient Boosting)
 
 ### 5.1 The "Residualization" Paradigm
@@ -394,29 +418,26 @@ When the relationship $f(X_t)$ is highly complex—involving interactions (e.g.,
 The logic is:
 1.  Train an ML model to predict $Y_t$ using only the covariates $X_t$.
     $$\hat{Y}_t = \text{Model}(X_t)$$
-    The prediction $\hat{Y}_t$ represents the "explainable" portion of the signal based on covariates.
 2.  The residual is the adjusted signal:
     $$t_1 = Y_t - \hat{Y}_t$$
 
 ### 5.2 The Risk of Overfitting and Signal leakage
 
-This approach carries a severe risk: **Signal Leakage**. An unconstrained Random Forest is a universal approximator. If trained on $X_t$, it might inadvertently learn the trend of $Y_t$ if $X_t$ contains any temporal information (e.g., "Year") or is correlated with time.
+This approach carries a severe risk: Signal Leakage. An unconstrained Random Forest is a universal approximator. If trained on $X_t$, it might inadvertently learn the trend of $Y_t$ if $X_t$ contains any temporal information (e.g., "Year") or is correlated with time.
 
-**Example:** If removing "Temperature" from "Electricity Load," and both have increased over 10 years (climate change + load growth), the RF might attribute the entire load growth to temperature. The residual $t_1$ would then have zero trend—incorrectly removing the intrinsic load growth.
-
-**Mitigation:** One must ensure $X_t$ does not contain proxies for the intrinsic signal $I_t$. Alternatively, one employs Double Machine Learning (Section 6).
+Mitigation: One must ensure $X_t$ does not contain proxies for the intrinsic signal $I_t$. Alternatively, one employs Double Machine Learning (Section 7).
 
 ### 5.3 Implementation with scikit-learn
 
-To perform this correctly, cross-validation predictions (out-of-fold) are often preferred over in-sample predictions to prevent the model from memorizing noise.
+To perform this correctly, time-aware cross-validation is mandatory. Standard k-fold CV shuffles data, leaking future information into the past. We use TimeSeriesSplit to ensure that the model predicting the effect at time $t$ has only been trained on data prior to $t$.
 
 ```python
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import cross_val_predict
+from sklearn.model_selection import cross_val_predict, TimeSeriesSplit
 
 def ml_residualize(df, target_col, covariate_cols):
     """
-    Removes covariate effects using a Random Forest via cross-validated residualization.
+    Removes covariate effects using a Random Forest via time-series cross-validation.
     """
     X = df[covariate_cols]
     y = df[target_col]
@@ -426,64 +447,103 @@ def ml_residualize(df, target_col, covariate_cols):
     rf = RandomForestRegressor(n_estimators=100, max_depth=10,
                                min_samples_leaf=10, random_state=42)
 
-    # Generate Predictions via Cross-Validation
-    # This ensures that the 'effect' for row i is predicted by a model
-    # that did NOT see row i during training.
-    # This prevents the model from simply memorizing the target.
-    effect_cv = cross_val_predict(rf, X, y, cv=5)
+    # Generate Predictions via Time-Aware Cross-Validation
+    # TimeSeriesSplit prevents look-ahead bias
+    tscv = TimeSeriesSplit(n_splits=5)
 
-    # Calculate Residual (t1)
-    t1 = y - effect_cv
+    # cross_val_predict will generate predictions for the test sets of each fold
+    # Note: This will result in fewer predictions than len(y) (first fold is training only)
+    # You may need to handle the initial window differently or accept truncation.
+    effect_cv = cross_val_predict(rf, X, y, cv=tscv)
+
+    # Align indices (cross_val_predict returns predictions for the validation sets only)
+    # Effect array length will be less than y. Typically we lose the first 'split' size.
+    # For simplicity here, we assume alignment or handle truncation:
+    valid_indices = y.index[-len(effect_cv):]
+    t1 = y.loc[valid_indices] - effect_cv
 
     return t1
 ```
 
-## 6. The Frontier: Causal Inference and Double Machine Learning (DML)
+## 6. Advanced Signal Processing & Structural Methods
 
-### 6.1 Why "Adjustment" is Causal Inference
+Beyond standard regression, specialized signal processing and structural methods offer powerful alternatives when the covariate operates in the frequency domain or affects specific quantiles.
+
+### 6.1 Frequency-Domain (Spectral) Adjustment
+
+Some covariates, such as tidal forces or daily temperature cycles, operate at distinct frequencies. Time-domain subtraction can be messy if the phase alignment isn't perfect.
+
+*   **Method:** Transform both $Y_t$ and $X_t$ into the frequency domain using Fast Fourier Transform (FFT). Identify the specific frequency bins where $X_t$ has power (e.g., the 24-hour cycle). Zero out or attenuate these bins in the spectrum of $Y_t$, then apply the Inverse FFT.
+*   **Use Case:** Removing "seasonality" that is strictly periodic and exogenous (e.g., 60Hz electrical hum, annual climate cycles).
+
+### 6.2 Matrix Decomposition (SSA/MSSA)
+
+Singular Spectrum Analysis (SSA) is a non-parametric method that decomposes a time series into additive components (trend, optional seasonality, noise) using SVD on a trajectory matrix.
+
+*   **Multivariate SSA (MSSA):** Can decompose $Y_t$ and $X_t$ simultaneously. By identifying the eigen-components shared between $Y$ and $X$, one can reconstruct $Y_t$ using only the components orthogonal to $X$.
+*   **Python:** The `pymssa` library implements this, offering a robust way to separate signal from noise without assuming a functional form like lines or splines.
+
+### 6.3 Quantile Adjustment
+
+Standard methods adjust the mean of $Y_t$. However, a covariate might affect the variance or the extremes (e.g., "Wind Speed" might not affect average "Building Sway", but drastically increases maximum sway).
+
+*   **Method:** Use Quantile Regression or Quantile GAMs (e.g., `qgam` in R, or `statsmodels.quantreg`) to model the relationship $f_\tau(X_t)$ at a specific quantile $\tau$ (e.g., the 90th percentile).
+*   **Adjustment:** $t_{1,\tau} = Y_t - \hat{f}_\tau(X_t)$. This allows for risk-based adjustment, where you remove the covariate's impact on the tail risk.
+
+## 7. The Frontier: Causal Inference and Double Machine Learning (DML)
+
+### 7.1 Why "Adjustment" is Causal Inference
 
 Most methods described above are associational. They ask: "What does $X$ tell us about $Y$?" and remove it. However, if $Y$ and $X$ are driven by a common unobserved confounder $Z$ (e.g., "Economic Sentiment" drives both "Ad Spend" and "Sales"), simply removing "Ad Spend" will bias the result. The adjusted series will still contain the echo of "Economic Sentiment".
 
-Double Machine Learning (DML), implemented in Microsoft's EconML and DoubleML, addresses this by orthogonalizing the data. It uses two models:
-1.  Model $Y$ as a function of controls $W$ (confounders) $\to$ residuals $\tilde{Y}$.
-2.  Model $X$ (covariate) as a function of controls $W$ $\to$ residuals $\tilde{X}$.
+Structural Causal Models (SCMs) and DAGs (Directed Acyclic Graphs) are required here to identify the correct "Adjustment Set" to block backdoor paths without opening collider paths.
 
-The relationship between $\tilde{Y}$ and $\tilde{X}$ represents the purified causal effect.
+### 7.2 Double Machine Learning (DML)
 
-While DML is typically used to estimate the effect coefficient $\theta$, the residuals $\tilde{Y}$ from the first stage effectively represent the target series "adjusted" for the controls $W$.
+Double Machine Learning (DML), implemented in Microsoft's EconML and DoubleML, addresses high-dimensional confounding by orthogonalizing the data.
 
-### 6.2 CausalImpact (BSTS)
+1.  Model $Y$ as a function of controls $W$ $\to$ residual $\tilde{Y}$.
+2.  Model $X$ as a function of controls $W$ $\to$ residual $\tilde{X}$.
+3.  Estimate the causal effect $\theta$ by regressing $\tilde{Y}$ on $\tilde{X}$.
 
-For the specific case of Intervention Analysis (e.g., "Remove the effect of the marketing campaign that started on Jan 1st"), Google's CausalImpact (Bayesian Structural Time Series) is the superior tool.
+**Generating $t_1$ with DML:**
 
-*   **Mechanism:** It trains a state-space model on the pre-intervention period (where the covariate effect is 0). It then forecasts what $Y$ would have been in the post-intervention period (counterfactual).
-*   **Adjustment:** The "adjusted" series is simply the counterfactual forecast during the intervention period, spliced with the actuals during the pre-intervention period.
-*   **Python:** Available via `tfp-causalimpact` or `causalimpact` packages.
+Unlike standard regression, DML focuses on estimating $\theta$. To generate the adjusted series $t_1$, you must use the estimated causal coefficient $\hat{\theta}$:
 
-## 7. Comparative Analysis and Selection Guide
+$$t_1 = Y_t - \hat{\theta} \cdot (X_t - \text{confounder effects})$$
 
-### 7.1 Comparison Table
+Or more simply, if $X$ is the treatment to remove: $t_1 = Y_t - \hat{\theta} X_t$. The value of DML is that $\hat{\theta}$ is unbiased even in the presence of high-dimensional confounders.
 
-| Feature | GAM (pygam) | ARIMAX (statsmodels) | Prophet (prophet) | Random Forest (ML) | Double ML (EconML) |
+## 8. Comparative Analysis and Selection Guide
+
+### 8.1 Comparison Table
+
+| Feature | GAM (pygam) | ARIMAX / VECM | Prophet | Spectral / SSA | Double ML |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Best For...** | Physical/Economic modeling with non-linear continuous covariates. | Short-term forecasting with linear covariates; strictly stationary data. | Business/Marketing data with holidays and events; quick decomposition. | High-dimensional interactions; unknown functional forms. | High-stakes causal inference; presence of confounders. |
-| **Non-Linearity** | Excellent (Splines) | Poor (Linear only) | Moderate (Transformations req.) | Excellent (Trees) | Excellent (via ML base learners) |
-| **Interpretability** | Very High (Partial Dependence Plots) | High (Coefficients) | High (Component Plots) | Low (Black Box) | Moderate (Effect Estimates) |
-| **Data Requirements** | Moderate (Needs enough data to fit splines) | High (Needs stationarity, no unit roots) | Low (Handles missing data/outliers) | High (Needs lots of data to avoid overfit) | Very High (Needs controls) |
-| **Covariate Removal** | Precise subtraction of $f(X)$ | Subtraction of $\beta X$ | Subtraction of Regressor Component | Subtraction of $\hat{Y}_{X}$ | Orthogonalization |
+| **Best For...** | Physical/Economic modeling with non-linear continuous covariates. | Stationary (ARIMAX) or Cointegrated (VECM) economic systems. | Business/Marketing data with holidays/events; quick decomposition. | Periodic/Cyclic noise removal; low signal-to-noise ratios. | High-stakes causal inference; presence of confounders. |
+| **Non-Linearity** | Excellent (Splines) | Poor (Linear only) | Moderate (Transformations req.) | N/A (Frequency based) | Excellent (via ML base learners) |
+| **Interpretability** | Very High (Partial Dependence) | High (Coefficients) | High (Component Plots) | Low (Eigenmodes) | Moderate (Effect Estimates) |
+| **Data Requirements** | Moderate | High (Stationarity/Cointegration tests) | Low (Handles missing data) | Moderate | Very High (Needs controls) |
+| **Covariate Removal** | Subtraction of $f(X)$ | Subtraction of $\beta X$ (or cointegrating vector) | Subtraction of Regressor Component | Filtering specific frequencies | Orthogonalization |
 
-### 7.2 Decision Matrix
+## 9. Conclusion & Practical Checklist
 
-*   Is the covariate effect non-linear? (e.g., Temperature, Wind Speed) $\rightarrow$ **Use GAMs.**
-*   Is the covariate an "Event"? (e.g., Holidays, Promos) $\rightarrow$ **Use Prophet.**
-*   Is the goal strictly statistical stationarity? $\rightarrow$ **Use ARIMAX.**
-*   Are there 50+ covariates with interactions? $\rightarrow$ **Use Random Forest Residualization (with cross-validation).**
-*   Is the "effect" potentially confounded by unobserved variables? $\rightarrow$ **Use Double ML or CausalImpact.**
+The generation of $t_1$ from $t_0$ is not a monolithic task but a spectrum of methodological choices. For the general practitioner, GAMs offer the most robust "default" choice, balancing flexibility with transparency. For econometricians dealing with equilibrium systems, VECM is non-negotiable. For causal questions, Double ML is the rigorous path.
 
-## 8. Conclusion
+### 9.1 Practical Checklist for Covariate Adjustment
 
-The generation of $t_1$ from $t_0$ is not a monolithic task but a spectrum of methodological choices ranging from rigid parametric subtraction to flexible semi-parametric smoothing.
+To ensure robust signal isolation, follow this execution checklist:
 
-For the general practitioner seeking a balance between flexibility and interpretability, **Generalized Additive Models (GAMs)** offer the most robust "default" choice. They allow the analyst to visually confirm the shape of the effect being removed (avoiding the linearity trap of ARIMAX) while maintaining mathematical transparency (avoiding the black-box risk of Random Forests).
-
-However, as the stakes of the analysis rise—particularly when the "adjusted" series is used to inform policy or investment—the analyst must transition toward Causal Inference frameworks. Here, the focus shifts from "curve fitting" to "structural identification," ensuring that the removal of a covariate does not inadvertently introduce bias through collider effects or spurious correlation. The selection of the method must ultimately align with the structural assumptions of the data generating process.
+1.  **Define objective:** Do you want to remove association (forecasting/cleaning) or identify causal effect (counterfactual analysis)?
+2.  **Inspect stationarity & trends:** Run ADF/KPSS tests. Plot levels. If both series are non-stationary and I(1), test for Cointegration. If cointegrated, use VECM.
+3.  **Visualize raw relationships:** Use scatter plots and partial dependence plots to check for non-linearity (U-shapes). If non-linear, use GAMs.
+4.  **Choose method:**
+    *   **GAM** for flexible continuous relationships.
+    *   **Prophet** for events/holidays.
+    *   **ARIMAX** for linear effects with strong autocorrelation.
+    *   **ML** for complex interactions (use TimeSeriesSplit!).
+    *   **DML/SCM** when unobserved confounders are suspected.
+5.  **Fit with time-aware validation:** Never use random shuffle CV for time series.
+6.  **Extract contribution:** Ensure you are subtracting the effect on the correct scale (handle centering/intercepts).
+7.  **Run diagnostics:** Check residuals for autocorrelation (ACF/PACF), perform placebo tests (random intervention dates), and check stability over time.
+8.  **Document structural assumptions:** Explicitly state if you assume linearity, stationarity, or absence of confounders.
