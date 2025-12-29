@@ -28,6 +28,9 @@ class ProphetDecanter(BaseDecanter):
         if isinstance(X, pd.Series):
             X = X.to_frame()
 
+        # Ensure column names are strings
+        X.columns = X.columns.astype(str)
+
         common_idx = y.index.intersection(X.index)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
@@ -63,6 +66,9 @@ class ProphetDecanter(BaseDecanter):
 
         if isinstance(X, pd.Series):
             X = X.to_frame()
+
+        # Ensure column names are strings to match fit
+        X.columns = X.columns.astype(str)
 
         # Align indices
         common_idx = y.index.intersection(X.index)

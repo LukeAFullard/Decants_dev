@@ -1,8 +1,11 @@
 import matplotlib.pyplot as plt
 import pandas as pd
-from decants.objects import DecantResult
+from typing import TYPE_CHECKING
 
-def plot_adjustment(result: DecantResult):
+if TYPE_CHECKING:
+    from decants.objects import DecantResult
+
+def plot_adjustment(result: "DecantResult"):
     """
     Unified plotting logic for DecantResult.
 

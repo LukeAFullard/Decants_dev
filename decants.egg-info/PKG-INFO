@@ -1,0 +1,18 @@
+Metadata-Version: 2.4
+Name: decants
+Version: 0.1.0
+Summary: Decant Time Series - Unified API for time series covariate adjustment
+Requires-Python: >=3.9
+Requires-Dist: pandas>=1.5.0
+Requires-Dist: pygam
+Requires-Dist: prophet
+Requires-Dist: statsmodels
+Requires-Dist: scikit-learn
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pygam; extra == "dev"
+Requires-Dist: statsmodels; extra == "dev"
+Requires-Dist: prophet; extra == "dev"
+Requires-Dist: scikit-learn; extra == "dev"
+Requires-Dist: matplotlib; extra == "dev"
+Requires-Dist: rpy2; extra == "dev"
