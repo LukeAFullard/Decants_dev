@@ -23,4 +23,8 @@ dev = [
     "prophet",
     "scikit-learn",
     "matplotlib",
+    "rpy2",
 ]
+
+[tool.setuptools]
+packages = ["decants"]
