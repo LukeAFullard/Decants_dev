@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict
+from typing import Tuple, Dict, Any
+from statsmodels.tsa.stattools import acf
+from statsmodels.stats.diagnostic import acorr_ljungbox
 
 def pearson_correlation(s1: pd.Series, s2: pd.Series) -> float:
     """
@@ -28,3 +30,26 @@ def variance_reduction(original: pd.Series, adjusted: pd.Series) -> float:
         return 0.0
 
     return 1.0 - (var_adj / var_orig)
+
+def check_autocorrelation(series: pd.Series, lags: int = 20) -> Dict[str, Any]:
+    """
+    Check for autocorrelation in a time series using ACF and Ljung-Box test.
+    Returns a dictionary containing ACF values and Ljung-Box test statistics.
+    """
+    series_clean = series.dropna()
+
+    # Calculate ACF
+    # fft=True is standard for performance
+    acf_values = acf(series_clean, nlags=lags, fft=True)
+
+    # Ljung-Box Test
+    # Returns a dataframe
+    lb_test = acorr_ljungbox(series_clean, lags=[lags], return_df=True)
+    lb_stat = lb_test['lb_stat'].iloc[0]
+    lb_pvalue = lb_test['lb_pvalue'].iloc[0]
+
+    return {
+        'acf': acf_values,
+        'lb_stat': lb_stat,
+        'lb_pvalue': lb_pvalue
+    }
