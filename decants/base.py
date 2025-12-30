@@ -32,11 +32,14 @@ class BaseDecanter(ABC):
         # Ideally subclasses call super().__init__() but they often don't if they are dataclasses or simple.
         # We will log the *current* state at save time, but history is important.
 
+    def _ensure_audit_log(self):
+        """Helper to ensure audit log is initialized."""
+        if not hasattr(self, '_audit_log'):
+            raise RuntimeError("Audit log not initialized. Ensure super().__init__() is called in your subclass.")
+
     def _log_event(self, event_type: str, details: Dict[str, Any]):
         """Internal method to append to audit log."""
-        if not hasattr(self, '_audit_log'):
-             # Re-init if missing (e.g. older pickle loaded or subclass didn't init)
-             self.__init__()
+        self._ensure_audit_log()
 
         entry = {
             "timestamp": datetime.datetime.now().isoformat(),
@@ -78,6 +81,7 @@ class BaseDecanter(ABC):
         """
         Fit the model to the data.
         """
+        self._ensure_audit_log()
         pass
 
     @abstractmethod
@@ -85,6 +89,7 @@ class BaseDecanter(ABC):
         """
         Apply the adjustment using the fitted model.
         """
+        self._ensure_audit_log()
         pass
 
     def fit_transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> DecantResult:
