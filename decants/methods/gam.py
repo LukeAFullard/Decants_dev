@@ -75,16 +75,7 @@ class GamDecanter(BaseDecanter):
         self.model = LinearGAM(terms, lam=self.lam)
 
         # Gridsearch Logic
-        explicit_gridsearch = kwargs.get('gridsearch', None)
-
-        should_gridsearch = False
-        if explicit_gridsearch is not None:
-            should_gridsearch = explicit_gridsearch
-        else:
-            if self.lam == 0.6:
-                should_gridsearch = True
-            else:
-                should_gridsearch = False
+        should_gridsearch = kwargs.get('gridsearch', False)
 
         if should_gridsearch:
              try:
