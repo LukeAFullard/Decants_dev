@@ -188,3 +188,20 @@ class DoubleMLDecanter(BaseDecanter):
             model=self.model, # Full model (naive)
             stats=stats
         )
+
+    def get_model_params(self) -> Dict[str, Any]:
+        """Return DoubleML configuration and nuisance model details."""
+        params = {
+            "nuisance_model": self.nuisance_model.__class__.__name__,
+            "splitter_arg": str(self.splitter_arg),
+            "n_splits": self.n_splits,
+            "min_train_size": self.min_train_size,
+            "allow_future": self.allow_future
+        }
+        # If the nuisance model is linear (e.g. Ridge), try to extract coefficients from the last fitted naive model
+        if self.model is not None and hasattr(self.model, "coef_"):
+             params["naive_model_coef"] = self.model.coef_
+        if self.model is not None and hasattr(self.model, "intercept_"):
+             params["naive_model_intercept"] = self.model.intercept_
+
+        return params
