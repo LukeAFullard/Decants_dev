@@ -19,6 +19,7 @@ class ArimaDecanter(BaseDecanter):
             seasonal_order (tuple): The (P,D,Q,s) order of the seasonal component.
             trend (str): Parameter controlling the deterministic trend polynomial.
         """
+        super().__init__()
         self.order = order
         self.seasonal_order = seasonal_order
         self.trend = trend
@@ -26,10 +27,22 @@ class ArimaDecanter(BaseDecanter):
         self.results = None
         self.exog_names = []
 
+        self._log_event("init", {
+            "order": str(order),
+            "seasonal_order": str(seasonal_order),
+            "trend": trend
+        })
+
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "ArimaDecanter":
         """
         Fit the SARIMAX model.
         """
+        self._log_event("fit_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X),
+            "kwargs": str(kwargs)
+        })
+
         y = y.dropna()
         if isinstance(X, pd.Series):
             X = X.to_frame()
@@ -42,7 +55,6 @@ class ArimaDecanter(BaseDecanter):
         self.exog_names = list(X.columns)
 
         # Initialize SARIMAX
-        # SARIMAX takes endog (y) and exog (X)
         self.model = SARIMAX(endog=y, exog=X,
                              order=self.order,
                              seasonal_order=self.seasonal_order,
@@ -50,6 +62,7 @@ class ArimaDecanter(BaseDecanter):
                              **{k:v for k,v in kwargs.items() if k not in ['order', 'seasonal_order', 'trend']})
 
         self.results = self.model.fit(disp=False)
+        self._log_event("fit_complete", {"aic": self.results.aic})
 
         return self
 
@@ -57,6 +70,11 @@ class ArimaDecanter(BaseDecanter):
         """
         Isolate effect and adjust series.
         """
+        self._log_event("transform_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X)
+        })
+
         if self.results is None:
             raise ValueError("Model not fitted yet.")
 
@@ -91,11 +109,6 @@ class ArimaDecanter(BaseDecanter):
             covariate_effect = X_exog @ beta_exog
 
             # Confidence Intervals
-            # var(effect_i) = x_i @ cov_beta @ x_i.T
-            # For each observation i:
-            # x_i is (1, K) row vector.
-            # var_i = x_i @ cov_sub @ x_i.T
-
             # Check if all needed params are in cov_params (sometimes optimization fails or some params are fixed)
             missing_cov = [p for p in exog_params_names if p not in cov_params.index]
             if not missing_cov:
@@ -125,6 +138,8 @@ class ArimaDecanter(BaseDecanter):
             "BIC": self.results.bic,
             "llf": self.results.llf
         }
+
+        self._log_event("transform_complete", {"stats": stats})
 
         return DecantResult(
             original_series=y,

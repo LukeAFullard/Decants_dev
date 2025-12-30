@@ -18,16 +18,28 @@ class MLDecanter(BaseDecanter):
             estimator (BaseEstimator): Scikit-learn regressor. Defaults to RandomForestRegressor.
             cv_splits (int): Number of splits for TimeSeriesSplit.
         """
+        super().__init__()
         self.estimator = estimator if estimator is not None else RandomForestRegressor(n_estimators=100, random_state=42)
         self.cv_splits = cv_splits
         self.model = None
         self.feature_names = []
+
+        self._log_event("init", {
+            "estimator": self.estimator.__class__.__name__,
+            "cv_splits": cv_splits
+        })
 
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "MLDecanter":
         """
         Fit the model on the entire dataset.
         This is used for future `transform` calls on new data.
         """
+        self._log_event("fit_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X),
+            "kwargs": str(kwargs)
+        })
+
         y = y.dropna()
         if isinstance(X, pd.Series):
             X = X.to_frame()
@@ -41,6 +53,8 @@ class MLDecanter(BaseDecanter):
         self.model = clone(self.estimator)
         self.model.fit(X, y)
 
+        self._log_event("fit_complete", {})
+
         return self
 
     def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
@@ -48,6 +62,11 @@ class MLDecanter(BaseDecanter):
         Apply the adjustment using the fitted model (Standard prediction).
         Used for new data or when CV is not desired/possible (e.g. single point).
         """
+        self._log_event("transform_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X)
+        })
+
         if self.model is None:
              raise ValueError("Model not fitted. Call fit() first.")
 
@@ -61,17 +80,28 @@ class MLDecanter(BaseDecanter):
         covariate_effect = self.model.predict(X)
         adjusted = y - covariate_effect
 
+        stats = {}
+        self._log_event("transform_complete", {"stats": stats})
+
         return DecantResult(
             original_series=y,
             adjusted_series=adjusted,
             covariate_effect=pd.Series(covariate_effect, index=y.index),
-            model=self.model
+            model=self.model,
+            stats=stats
         )
 
     def fit_transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> DecantResult:
         """
         Fit and Transform using Time Series Cross-Validation to prevent leakage.
         """
+        # Log fit_transform separately as it does special CV logic
+        self._log_event("fit_transform_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X),
+            "kwargs": str(kwargs)
+        })
+
         # 1. Fit the main model for future use
         self.fit(y, X, **kwargs)
 
@@ -106,6 +136,8 @@ class MLDecanter(BaseDecanter):
         stats = {
             "cv_splits": self.cv_splits
         }
+
+        self._log_event("fit_transform_complete", {"stats": stats})
 
         return DecantResult(
             original_series=y,

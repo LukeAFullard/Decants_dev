@@ -19,18 +19,31 @@ class GamDecanter(BaseDecanter):
             lam (float or list): Smoothing parameter(s).
             trend_term (str): 'spline' for s(0) or 'linear' for l(0) for the time index.
         """
+        super().__init__() # Initialize Audit Log
         self.n_splines = n_splines
         self.lam = lam
         self.trend_term = trend_term
         self.model = None
         self.feature_names = []
 
+        # Log init params
+        self._log_event("init", {
+            "n_splines": n_splines,
+            "lam": str(lam) if isinstance(lam, list) else lam, # lists might be numpy arrays
+            "trend_term": trend_term
+        })
+
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "GamDecanter":
         """
         Fit the GAM model.
-
-        Constructs a feature matrix: [Time_Index, Covariate_1, ..., Covariate_n]
         """
+        # Log fit start
+        self._log_event("fit_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X),
+            "kwargs": str(kwargs)
+        })
+
         # align indices
         y = y.dropna()
         if isinstance(X, pd.Series):
@@ -42,20 +55,14 @@ class GamDecanter(BaseDecanter):
         X = X.loc[common_idx]
 
         # Create Time Index (0 to N-1)
-        # Note: This assumes continuity and relative time.
-        # If transforming new data, this time index will reset.
-        # User is warned to ensure data consistency or use continuous series.
         time_idx = np.arange(len(y))
 
         # Construct Feature Matrix
-        # Column 0: Time Index
-        # Columns 1..N: Covariates
         X_matrix = np.column_stack([time_idx, X.values])
 
         self.feature_names = ['time_trend'] + list(X.columns)
 
         # Construct Model Terms
-        # Term 0 is Time Index.
         if self.trend_term == 'linear':
             terms = l(0)
         else:
@@ -67,33 +74,29 @@ class GamDecanter(BaseDecanter):
 
         self.model = LinearGAM(terms, lam=self.lam)
 
-        # Logic for gridsearch:
-        # Default to gridsearch=True ONLY if user did not specify a custom lam in __init__.
-        # If kwargs explicitly contains 'gridsearch', respect it.
-        # Otherwise, if lam is default (0.6), gridsearch=True. If lam is custom, gridsearch=False.
-
+        # Gridsearch Logic
         explicit_gridsearch = kwargs.get('gridsearch', None)
 
         should_gridsearch = False
         if explicit_gridsearch is not None:
             should_gridsearch = explicit_gridsearch
         else:
-            # Default logic
-            if self.lam == 0.6: # 0.6 is the default value in __init__
+            if self.lam == 0.6:
                 should_gridsearch = True
             else:
                 should_gridsearch = False
 
         if should_gridsearch:
              try:
-                 # Pass other kwargs to gridsearch
                  grid_kwargs = {k:v for k,v in kwargs.items() if k!='gridsearch'}
                  self.model = self.model.gridsearch(X_matrix, y.values, **grid_kwargs)
-             except Exception:
-                 # Fallback to fit if gridsearch fails
+                 self._log_event("optimization", {"method": "gridsearch", "success": True, "lam": str(self.model.lam)})
+             except Exception as e:
+                 self._log_event("optimization", {"method": "gridsearch", "success": False, "error": str(e)})
                  self.model.fit(X_matrix, y.values)
         else:
             self.model.fit(X_matrix, y.values)
+            self._log_event("optimization", {"method": "fit", "lam": str(self.model.lam)})
 
         return self
 
@@ -101,6 +104,11 @@ class GamDecanter(BaseDecanter):
         """
         Isolate effect and adjust series.
         """
+        self._log_event("transform_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X)
+        })
+
         if self.model is None:
             raise ValueError("Model not fitted yet.")
 
@@ -122,25 +130,17 @@ class GamDecanter(BaseDecanter):
         time_idx = np.arange(len(y))
         X_matrix = np.column_stack([time_idx, X.values])
 
-        # Calculate Total Effect of Covariates
         covariate_effect = np.zeros(len(y))
-
-        # Also need to sum confidence intervals (conservative approx).
         effect_lower = np.zeros(len(y))
         effect_upper = np.zeros(len(y))
 
         for i in range(1, X_matrix.shape[1]):
-            # term indices match column indices if we constructed it that way (s(0)+s(1)+...)
-            # We request CIs with width=0.95
             try:
                 pdep, conf = self.model.partial_dependence(term=i, X=X_matrix, meshgrid=False, width=0.95)
                 covariate_effect += pdep
-
-                # Sum the intervals (conservative bounds)
                 effect_lower += conf[:, 0]
                 effect_upper += conf[:, 1]
             except Exception:
-                # Fallback if CI calculation fails
                  effect = self.model.partial_dependence(term=i, X=X_matrix, meshgrid=False)
                  covariate_effect += effect
 
@@ -151,12 +151,13 @@ class GamDecanter(BaseDecanter):
             'upper': effect_upper
         }, index=y.index)
 
-        # Stats
         stats = {
             "score": self.model.statistics_['edof'],
             "AIC": self.model.statistics_['AIC'],
             "pseudo_r2": self.model.statistics_['pseudo_r2']['explained_deviance']
         }
+
+        self._log_event("transform_complete", {"stats": stats})
 
         return DecantResult(
             original_series=y,

@@ -15,14 +15,22 @@ class ProphetDecanter(BaseDecanter):
         Args:
             **kwargs: Arguments passed to Prophet constructor (e.g. interval_width, daily_seasonality).
         """
+        super().__init__()
         self.model_kwargs = kwargs
         self.model = None
         self.regressor_names = []
+        self._log_event("init", {"model_kwargs": str(kwargs)})
 
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "ProphetDecanter":
         """
         Fit the Prophet model.
         """
+        self._log_event("fit_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X),
+            "kwargs": str(kwargs)
+        })
+
         # Align indices
         y = y.dropna()
         if isinstance(X, pd.Series):
@@ -36,8 +44,6 @@ class ProphetDecanter(BaseDecanter):
         X = X.loc[common_idx]
 
         # Prepare Data for Prophet
-        # Prophet expects 'ds' and 'y' columns
-        # Note: y.index should be Datetime or convertible to it, or numeric.
         df = pd.DataFrame({'ds': y.index, 'y': y.values})
 
         self.regressor_names = list(X.columns)
@@ -56,12 +62,19 @@ class ProphetDecanter(BaseDecanter):
         # Fit
         self.model.fit(df, **kwargs)
 
+        self._log_event("fit_complete", {"regressors": self.regressor_names})
+
         return self
 
     def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
         """
         Isolate effect and adjust series.
         """
+        self._log_event("transform_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X)
+        })
+
         if self.model is None:
             raise ValueError("Model not fitted yet.")
 
@@ -77,9 +90,6 @@ class ProphetDecanter(BaseDecanter):
         X = X.loc[common_idx]
 
         # Prepare Data for Prediction (Prophet needs 'ds' and regressors)
-        # Note: Prophet usually wants 'y' too if we are checking accuracy, but for predict we don't strictly need 'y'.
-        # However, we are "transforming" y, so we use y.index.
-
         future = pd.DataFrame({'ds': y.index})
         for col in self.regressor_names:
             if col not in X.columns:
@@ -90,12 +100,6 @@ class ProphetDecanter(BaseDecanter):
         forecast = self.model.predict(future)
 
         # Extract Effects
-        # Prophet forecast dataframe has columns for each regressor.
-        # We need to sum them up to get total covariate effect.
-        # Alternatively, 'extra_regressors_additive' gives the sum of additive regressors.
-        # If user used multiplicative regressors, they would be in 'extra_regressors_multiplicative'.
-        # For this implementation, we assume additive as per standard residualization logic.
-
         covariate_effect = np.zeros(len(y))
 
         if 'extra_regressors_additive' in forecast.columns:
@@ -108,19 +112,17 @@ class ProphetDecanter(BaseDecanter):
                     covariate_effect += forecast[col].values
 
         if 'extra_regressors_multiplicative' in forecast.columns:
-             # Just a warning or log? We don't support multiplicative decanting easily.
-             # If present, it multiplies the trend.
-             # Effect = Trend * (1 + multi) - Trend = Trend * multi
-             # But we don't know the Trend easily without pulling it.
-             # Let's try to extract it if it exists.
              multi = forecast['extra_regressors_multiplicative'].values
              trend = forecast['trend'].values
              covariate_effect += trend * multi
+             self._log_event("warning", {"message": "Multiplicative regressors detected. Effect isolation is approximate."})
 
         # Adjusted Series = y - Covariate Effect
         adjusted = y - covariate_effect
 
         stats = {}
+
+        self._log_event("transform_complete", {"stats": stats})
 
         return DecantResult(
             original_series=y,
