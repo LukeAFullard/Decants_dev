@@ -132,3 +132,10 @@ class ProphetDecanter(BaseDecanter):
             params=self.model.params,
             stats=stats
         )
+
+    def get_model_params(self) -> Dict[str, Any]:
+        """Return fitted Prophet parameters."""
+        if self.model is None:
+            return {}
+        # Prophet params are numpy arrays, base.save handles serialization
+        return self.model.params

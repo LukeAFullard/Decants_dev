@@ -76,6 +76,13 @@ class BaseDecanter(ABC):
             raise ValueError("Intersection of y and X indices is empty. Cannot fit or transform.")
         return common_idx
 
+    def get_model_params(self) -> Dict[str, Any]:
+        """
+        Return a dictionary of fitted model parameters/coefficients for serialization.
+        Subclasses should override this to provide meaningful exports (e.g. coefficients).
+        """
+        return {}
+
     @abstractmethod
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "BaseDecanter":
         """
@@ -101,7 +108,7 @@ class BaseDecanter(ABC):
     def save(self, filepath: str):
         """
         Save the fitted decanter to a file using pickle.
-        Also saves a sidecar .audit.json file.
+        Also saves a sidecar .audit.json file and a .params.json file.
 
         Args:
             filepath (str): The path to save the model to (e.g., 'model.pkl').
@@ -112,9 +119,6 @@ class BaseDecanter(ABC):
         with open(filepath, 'wb') as f:
             pickle.dump(self, f)
 
-        # Save Audit JSON
-        audit_path = filepath + ".audit.json"
-
         # Helper to serialize non-json types in log
         def default(o):
             if isinstance(o, (np.integer, np.floating)):
@@ -123,8 +127,21 @@ class BaseDecanter(ABC):
                 return o.tolist()
             return str(o)
 
+        # Save Audit JSON
+        audit_path = filepath + ".audit.json"
         with open(audit_path, 'w') as f:
             json.dump(self._audit_log, f, indent=2, default=default)
+
+        # Save Params JSON
+        params_path = filepath + ".params.json"
+        try:
+            params = self.get_model_params()
+            with open(params_path, 'w') as f:
+                json.dump(params, f, indent=2, default=default)
+        except Exception as e:
+            # Fallback if params extraction fails
+            with open(params_path, 'w') as f:
+                json.dump({"error": f"Failed to export params: {str(e)}"}, f, indent=2)
 
     @classmethod
     def load(cls, filepath: str) -> "BaseDecanter":

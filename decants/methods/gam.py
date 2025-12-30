@@ -168,3 +168,14 @@ class GamDecanter(BaseDecanter):
             conf_int=conf_int_df,
             stats=stats
         )
+
+    def get_model_params(self) -> Dict[str, Any]:
+        """Return fitted GAM parameters."""
+        if self.model is None:
+            return {}
+        return {
+            "lam": self.model.lam,
+            "n_splines": self.n_splines,
+            "trend_term": self.trend_term,
+            "statistics": self.model.statistics_
+        }

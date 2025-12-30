@@ -3,8 +3,44 @@ import pandas as pd
 import numpy as np
 import pytest
 import os
+import json
 from decants.methods.gam import GamDecanter
 from decants.base import BaseDecanter
+
+def test_params_json_export():
+    """Verify that saving a model also exports a human-readable params JSON."""
+    X = pd.DataFrame({'a': np.random.randn(50)})
+    y = pd.Series(np.random.randn(50) + X['a'])
+
+    gam = GamDecanter(n_splines=5)
+    gam.fit(y, X)
+
+    filepath = "test_gam_params.pkl"
+    params_path = filepath + ".params.json"
+    audit_path = filepath + ".audit.json"
+
+    try:
+        gam.save(filepath)
+
+        # Check file existence
+        assert os.path.exists(params_path)
+        assert os.path.exists(audit_path)
+
+        # Check content
+        with open(params_path, 'r') as f:
+            params = json.load(f)
+
+        assert "lam" in params
+        assert "n_splines" in params
+        assert params["n_splines"] == 5
+
+    finally:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+        if os.path.exists(params_path):
+            os.remove(params_path)
+        if os.path.exists(audit_path):
+            os.remove(audit_path)
 
 def test_save_load_gam():
     # Setup Data

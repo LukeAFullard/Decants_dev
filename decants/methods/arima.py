@@ -150,3 +150,16 @@ class ArimaDecanter(BaseDecanter):
             conf_int=conf_int_df,
             stats=stats
         )
+
+    def get_model_params(self) -> Dict[str, Any]:
+        """Return fitted SARIMAX parameters."""
+        if self.results is None:
+            return {}
+        return {
+            "params": self.results.params.to_dict(),
+            "aic": self.results.aic,
+            "bic": self.results.bic,
+            "llf": self.results.llf,
+            "order": self.order,
+            "seasonal_order": self.seasonal_order
+        }
