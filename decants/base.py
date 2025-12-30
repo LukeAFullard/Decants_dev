@@ -1,12 +1,67 @@
 from abc import ABC, abstractmethod
 import pandas as pd
-from typing import Optional, Union, Any
+import numpy as np
+from typing import Optional, Union, Any, Dict, List
 from .objects import DecantResult
+import pickle
+import hashlib
+import json
+import sys
+import datetime
+import platform
 
 class BaseDecanter(ABC):
     """
     Abstract Base Class for all Decanter methods.
+    Includes Audit Mode for robust tracking of provenance and decisions.
     """
+    def __init__(self):
+        # Audit Log
+        self._audit_log: Dict[str, Any] = {
+            "created_at": datetime.datetime.now().isoformat(),
+            "library_versions": {
+                "python": sys.version,
+                "platform": platform.platform(),
+                "pandas": pd.__version__,
+                "numpy": np.__version__
+            },
+            "history": [],
+            "interpretations": []
+        }
+        # We capture init params in subclasses, or generally?
+        # Ideally subclasses call super().__init__() but they often don't if they are dataclasses or simple.
+        # We will log the *current* state at save time, but history is important.
+
+    def _log_event(self, event_type: str, details: Dict[str, Any]):
+        """Internal method to append to audit log."""
+        if not hasattr(self, '_audit_log'):
+             # Re-init if missing (e.g. older pickle loaded or subclass didn't init)
+             self.__init__()
+
+        entry = {
+            "timestamp": datetime.datetime.now().isoformat(),
+            "type": event_type,
+            "details": details
+        }
+        self._audit_log["history"].append(entry)
+
+    def _hash_data(self, obj: Union[pd.Series, pd.DataFrame]) -> str:
+        """Compute SHA256 hash of pandas object for provenance."""
+        # hashing pandas is tricky. We use value bytes.
+        try:
+            return hashlib.sha256(pd.util.hash_pandas_object(obj, index=True).values).hexdigest()
+        except Exception:
+            return "hash_computation_failed"
+
+    def add_interpretation(self, text: str, author: Optional[str] = None):
+        """
+        Add a human interpretation or note to the audit log.
+
+        Args:
+            text (str): The interpretation note.
+            author (str, optional): Name of the analyst.
+        """
+        self._log_event("interpretation", {"text": text, "author": author})
 
     def _validate_alignment(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> pd.Index:
         """
@@ -22,14 +77,6 @@ class BaseDecanter(ABC):
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "BaseDecanter":
         """
         Fit the model to the data.
-
-        Args:
-            y (pd.Series): The target time series.
-            X (pd.DataFrame or pd.Series): The covariate(s).
-            **kwargs: Additional arguments for the underlying model.
-
-        Returns:
-            self
         """
         pass
 
@@ -37,26 +84,63 @@ class BaseDecanter(ABC):
     def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
         """
         Apply the adjustment using the fitted model.
-
-        Args:
-            y (pd.Series): The target time series (can be new data).
-            X (pd.DataFrame or pd.Series): The covariate(s) (can be new data).
-
-        Returns:
-            DecantResult: The result object containing adjusted series and stats.
         """
         pass
 
     def fit_transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> DecantResult:
         """
         Fit the model and apply the adjustment.
-
-        Args:
-            y (pd.Series): The target time series.
-            X (pd.DataFrame or pd.Series): The covariate(s).
-            **kwargs: Additional arguments for the underlying model.
-
-        Returns:
-            DecantResult: The result object.
         """
         return self.fit(y, X, **kwargs).transform(y, X)
+
+    def save(self, filepath: str):
+        """
+        Save the fitted decanter to a file using pickle.
+        Also saves a sidecar .audit.json file.
+
+        Args:
+            filepath (str): The path to save the model to (e.g., 'model.pkl').
+        """
+        # Ensure audit log is up to date with current params if possible
+        # (Subclasses might store params differently, but we have history)
+
+        with open(filepath, 'wb') as f:
+            pickle.dump(self, f)
+
+        # Save Audit JSON
+        audit_path = filepath + ".audit.json"
+
+        # Helper to serialize non-json types in log
+        def default(o):
+            if isinstance(o, (np.integer, np.floating)):
+                return float(o)
+            if isinstance(o, np.ndarray):
+                return o.tolist()
+            return str(o)
+
+        with open(audit_path, 'w') as f:
+            json.dump(self._audit_log, f, indent=2, default=default)
+
+    @classmethod
+    def load(cls, filepath: str) -> "BaseDecanter":
+        """
+        Load a fitted decanter from a file.
+
+        Args:
+            filepath (str): The path to load the model from.
+
+        Returns:
+            BaseDecanter: The loaded model instance.
+        """
+        with open(filepath, 'rb') as f:
+            obj = pickle.load(f)
+
+        # Ensure it has audit log if it was an old model (migration)
+        if not hasattr(obj, '_audit_log'):
+            obj._audit_log = {"warning": "Loaded from legacy model without audit log"}
+
+        if not isinstance(obj, BaseDecanter):
+             # Warning or strict check?
+             if not isinstance(obj, BaseDecanter):
+                 raise TypeError(f"Loaded object is not a Decanter, got {type(obj)}")
+        return obj

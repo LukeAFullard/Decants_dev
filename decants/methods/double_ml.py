@@ -33,12 +33,21 @@ class DoubleMLDecanter(BaseDecanter):
             min_train_size: Minimum training size for TimeSeriesSplitter.
             allow_future: If True, forces 'interpolation' mode regardless of splitter arg.
         """
+        super().__init__()
         self.nuisance_model = nuisance_model if nuisance_model is not None else Ridge(alpha=1.0)
         self.splitter_arg = splitter
         self.n_splits = n_splits
         self.min_train_size = min_train_size
         self.allow_future = allow_future
         self.model = None # The last fitted model (conceptually DML doesn't have a single model)
+
+        self._log_event("init", {
+            "nuisance_model": self.nuisance_model.__class__.__name__,
+            "splitter_arg": str(splitter),
+            "n_splits": n_splits,
+            "min_train_size": min_train_size,
+            "allow_future": allow_future
+        })
 
     def _get_splitter(self):
         if self.allow_future:
@@ -65,6 +74,12 @@ class DoubleMLDecanter(BaseDecanter):
         but we store the last trained nuisance model on the full dataset for
         potential future 'transform' calls on NEW data (naive application).
         """
+        self._log_event("fit_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X),
+            "kwargs": str(kwargs)
+        })
+
         y = y.dropna()
         if isinstance(X, pd.Series):
             X = X.to_frame()
@@ -75,12 +90,19 @@ class DoubleMLDecanter(BaseDecanter):
 
         self.model = clone(self.nuisance_model)
         self.model.fit(X, y)
+        self._log_event("fit_complete", {})
+
         return self
 
     def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
         """
         Applies the DoubleML procedure (Cross-Fitting).
         """
+        self._log_event("transform_start", {
+            "y_hash": self._hash_data(y),
+            "X_hash": self._hash_data(X)
+        })
+
         # Data alignment
         y_orig = y.copy() # Keep full original for return
         y = y.dropna()
@@ -133,7 +155,9 @@ class DoubleMLDecanter(BaseDecanter):
             # In production/defense, we should log this or warn.
             # Using print is okay for now but maybe logging is better?
             # Keeping print as per original code, but adding check.
-            print(f"Warning: DML Split failed: {e}. Returning NaNs.")
+            msg = f"Warning: DML Split failed: {e}. Returning NaNs."
+            print(msg)
+            self._log_event("warning", {"message": msg})
 
         # If strict time series, early values remain NaN.
         # If LOO, all should be filled.
@@ -154,6 +178,8 @@ class DoubleMLDecanter(BaseDecanter):
         # Reindex to original input shape (propagating NaNs where we didn't have data/predictions)
         final_adjusted = adjusted.reindex(y_orig.index)
         final_effect = covariate_effect.reindex(y_orig.index)
+
+        self._log_event("transform_complete", {"stats": stats})
 
         return DecantResult(
             original_series=y_orig,
