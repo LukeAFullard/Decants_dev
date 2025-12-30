@@ -31,12 +31,13 @@ class ProphetDecanter(BaseDecanter):
         # Ensure column names are strings
         X.columns = X.columns.astype(str)
 
-        common_idx = y.index.intersection(X.index)
+        common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
         # Prepare Data for Prophet
         # Prophet expects 'ds' and 'y' columns
+        # Note: y.index should be Datetime or convertible to it, or numeric.
         df = pd.DataFrame({'ds': y.index, 'y': y.values})
 
         self.regressor_names = list(X.columns)
@@ -71,7 +72,7 @@ class ProphetDecanter(BaseDecanter):
         X.columns = X.columns.astype(str)
 
         # Align indices
-        common_idx = y.index.intersection(X.index)
+        common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
@@ -95,50 +96,31 @@ class ProphetDecanter(BaseDecanter):
         # If user used multiplicative regressors, they would be in 'extra_regressors_multiplicative'.
         # For this implementation, we assume additive as per standard residualization logic.
 
-        # Let's check if extra_regressors_additive exists and use it,
-        # but also check for multiplicative just in case (though we didn't expose mode setting easily yet, default is additive).
-
         covariate_effect = np.zeros(len(y))
 
         if 'extra_regressors_additive' in forecast.columns:
              covariate_effect += forecast['extra_regressors_additive'].values
 
-        if 'extra_regressors_multiplicative' in forecast.columns:
-             # Multiplicative effect is a multiplier on trend?
-             # y(t) = Trend * (1 + Multiplicative_Terms) + Additive_Terms
-             # Effectively the "effect" contribution to y is ... complex to separate as "y - effect" if it's multiplicative.
-             # But usually residualization implies subtraction.
-             # If we have multiplicative, the "effect" in units of y depends on the trend.
-             # Prophet's column 'extra_regressors_multiplicative' is likely the value of the term itself (percentage?).
-             # Actually, prophet documentation says components are in units of y for additive,
-             # but for multiplicative they are percentages?
-             # Let's assume Additive for now as per "Decant" philosophy (Adjustment = y - Effect).
-             # If user does multiplicative, this might be tricky.
-             # We will ignore multiplicative for now or assume 0 if not present.
-             pass
-
-        # If individual columns exist and extra_regressors_additive not found (older prophet?), we sum manually.
-        if 'extra_regressors_additive' not in forecast.columns:
-            # Manually sum
-            for col in self.regressor_names:
+        # Fallback manual sum if 'extra_regressors_additive' is missing (older versions?)
+        elif self.regressor_names:
+             for col in self.regressor_names:
                 if col in forecast.columns:
                     covariate_effect += forecast[col].values
+
+        if 'extra_regressors_multiplicative' in forecast.columns:
+             # Just a warning or log? We don't support multiplicative decanting easily.
+             # If present, it multiplies the trend.
+             # Effect = Trend * (1 + multi) - Trend = Trend * multi
+             # But we don't know the Trend easily without pulling it.
+             # Let's try to extract it if it exists.
+             multi = forecast['extra_regressors_multiplicative'].values
+             trend = forecast['trend'].values
+             covariate_effect += trend * multi
 
         # Adjusted Series = y - Covariate Effect
         adjusted = y - covariate_effect
 
-        # Confidence Intervals
-        # Prophet gives yhat_lower/upper, but that includes trend/seasonality uncertainty.
-        # It doesn't typically give CI for the *regressor effect* specifically in the forecast dataframe,
-        # unless we look at the samples?
-        # The forecast df has 'extra_regressors_additive', but usually no 'extra_regressors_additive_lower'.
-        # We might not be able to populate conf_int easily without sampling.
-        # So we leave it None or try to find it?
-        # Prophet MCMC samples can give it, but default is MAP (no samples).
-        # We will leave conf_int as None for now.
-
         stats = {}
-        # Try to get some basic stats if possible?
 
         return DecantResult(
             original_series=y,

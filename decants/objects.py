@@ -13,7 +13,7 @@ class DecantResult:
     model: Any
     params: Dict[str, Any] = field(default_factory=dict)
     conf_int: Optional[pd.DataFrame] = None
-    stats: Dict[str, float] = field(default_factory=dict)
+    stats: Dict[str, Any] = field(default_factory=dict)
 
     def plot(self):
         """
