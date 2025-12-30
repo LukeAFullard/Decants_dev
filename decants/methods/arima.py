@@ -35,7 +35,7 @@ class ArimaDecanter(BaseDecanter):
             X = X.to_frame()
 
         # Align indices
-        common_idx = y.index.intersection(X.index)
+        common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
@@ -63,38 +63,18 @@ class ArimaDecanter(BaseDecanter):
         if isinstance(X, pd.Series):
             X = X.to_frame()
 
-        common_idx = y.index.intersection(X.index)
+        common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
         # Effect Isolation
-        # Extract parameters for exog variables
-        # self.results.params contains all params (ar, ma, variance, exog_params)
-        # We need to filter for exog params.
-
-        # exog parameters usually match the column names of X
-        # or are prefixed? SARIMAX usually keeps names.
-
         params = self.results.params
 
-        # Identify exog parameters
-        # SARIMAX assigns names to params. For exog, it's usually the column name.
-        # But if there are collisions or other things?
-        # Let's rely on self.exog_names which we saved.
-
-        # Calculate effect: X @ params_exog
-
-        # Safe way: iterate over exog_names and find corresponding param
-        # If param not found (e.g. constant?), skip?
-
         covariate_effect = np.zeros(len(y))
-        effect_lower = np.zeros(len(y))
-        effect_upper = np.zeros(len(y))
 
-        # We need variance of the effect for CI.
-        # Var(X @ beta) = X @ Var(beta) @ X.T (diagonal elements)
-        # X is (N, K), Var(beta) is (K, K) -> result (N,) variance.
-        # But we only need beta corresponding to exog.
+        # Initialize CIs with NaN to avoid misleading zeros if calculation skipped
+        effect_lower = np.full(len(y), np.nan)
+        effect_upper = np.full(len(y), np.nan)
 
         # Extract sub-covariance matrix for exog parameters
         cov_params = self.results.cov_params()
@@ -103,9 +83,6 @@ class ArimaDecanter(BaseDecanter):
         exog_params_names = [name for name in self.exog_names if name in params.index]
 
         if not exog_params_names:
-            # Maybe something went wrong or no exog used?
-            # Or names changed?
-            # SARIMAX might rename if constant added?
             pass
         else:
             beta_exog = params[exog_params_names].values
@@ -119,21 +96,22 @@ class ArimaDecanter(BaseDecanter):
             # x_i is (1, K) row vector.
             # var_i = x_i @ cov_sub @ x_i.T
 
-            cov_sub = cov_params.loc[exog_params_names, exog_params_names].values
+            # Check if all needed params are in cov_params (sometimes optimization fails or some params are fixed)
+            missing_cov = [p for p in exog_params_names if p not in cov_params.index]
+            if not missing_cov:
+                cov_sub = cov_params.loc[exog_params_names, exog_params_names].values
 
-            # Efficient computation of diagonals of X @ cov @ X.T
-            # sum((X @ cov) * X, axis=1)
-            # variance = (X_exog @ cov_sub * X_exog).sum(axis=1)
-            # Wait, element-wise mult?
-            # (N, K) @ (K, K) -> (N, K)
-            # (N, K) * (N, K) -> (N, K) -> sum -> (N,)
+                # Efficient computation of diagonals of X @ cov @ X.T
+                variances = (X_exog.dot(cov_sub) * X_exog).sum(axis=1)
 
-            variances = (X_exog.dot(cov_sub) * X_exog).sum(axis=1)
-            std_errors = np.sqrt(variances)
+                # Ensure non-negative variances (numerical issues)
+                variances = np.maximum(variances, 0)
 
-            # 95% CI
-            effect_lower = covariate_effect - 1.96 * std_errors
-            effect_upper = covariate_effect + 1.96 * std_errors
+                std_errors = np.sqrt(variances)
+
+                # 95% CI
+                effect_lower = covariate_effect - 1.96 * std_errors
+                effect_upper = covariate_effect + 1.96 * std_errors
 
         adjusted = y - covariate_effect
 
@@ -153,7 +131,7 @@ class ArimaDecanter(BaseDecanter):
             adjusted_series=adjusted,
             covariate_effect=pd.Series(covariate_effect, index=y.index),
             model=self.results,
-            params=self.results.params.to_dict(),
+            params=self.results.params.to_dict(), # Restore .to_dict()
             conf_int=conf_int_df,
             stats=stats
         )

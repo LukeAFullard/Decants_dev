@@ -8,6 +8,16 @@ class BaseDecanter(ABC):
     Abstract Base Class for all Decanter methods.
     """
 
+    def _validate_alignment(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> pd.Index:
+        """
+        Validate alignment of y and X and return common index.
+        Raises ValueError if intersection is empty.
+        """
+        common_idx = y.index.intersection(X.index)
+        if len(common_idx) == 0:
+            raise ValueError("Intersection of y and X indices is empty. Cannot fit or transform.")
+        return common_idx
+
     @abstractmethod
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "BaseDecanter":
         """

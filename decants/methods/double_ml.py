@@ -69,7 +69,7 @@ class DoubleMLDecanter(BaseDecanter):
         if isinstance(X, pd.Series):
             X = X.to_frame()
 
-        common_idx = y.index.intersection(X.index)
+        common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
@@ -87,7 +87,7 @@ class DoubleMLDecanter(BaseDecanter):
         if isinstance(X, pd.Series):
             X = X.to_frame()
 
-        common_idx = y.index.intersection(X.index)
+        common_idx = self._validate_alignment(y, X)
         y_aligned = y.loc[common_idx]
         X_aligned = X.loc[common_idx]
 
@@ -130,6 +130,9 @@ class DoubleMLDecanter(BaseDecanter):
 
         except ValueError as e:
             # Handle cases like "not enough data for split"
+            # In production/defense, we should log this or warn.
+            # Using print is okay for now but maybe logging is better?
+            # Keeping print as per original code, but adding check.
             print(f"Warning: DML Split failed: {e}. Returning NaNs.")
 
         # If strict time series, early values remain NaN.
