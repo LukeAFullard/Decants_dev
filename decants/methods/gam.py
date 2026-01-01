@@ -4,9 +4,10 @@ from pygam import LinearGAM, s, l
 from typing import Union, Optional, List, Dict, Any
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 import warnings
 
-class GamDecanter(BaseDecanter):
+class GamDecanter(BaseDecanter, MarginalizationMixin):
     """
     GAM-based Decanter using pygam.
     Uses Semi-Parametric Smoothing to separate covariate effects from time trend.

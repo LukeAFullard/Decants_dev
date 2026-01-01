@@ -10,6 +10,7 @@
 *   **Double Machine Learning:** Causal residualization for high-dimensional confounding (via `sklearn`).
 *   **Gaussian Processes:** Non-parametric Bayesian regression (Kriging) for irregularly sampled time series.
 *   **LOESS (Generalized WRTDS):** Empirical, assumption-free adjustment for complex, non-stationary relationships.
+*   **Covariate Integration (Marginalization):** Risk-adjusted trend estimation via Monte Carlo Historical Replay.
 *   **Robust Diagnostics:** Variance reduction, orthogonality checks, and correlation analysis.
 *   **Unified API:** Consistent `fit`, `transform`, and `DecantResult` interface.
 
@@ -80,7 +81,35 @@ result = decanter.fit_transform(y, X)
 result.plot()
 ```
 
-### 4. Handling Small Datasets (N=120)
+### 4. Covariate Integration (Marginalization)
+
+Sometimes you don't just want to remove the *value* of a covariate (e.g., "It was hot today"), but its *risk* (e.g., "This location is generally hot").
+
+**Covariate Integration** answers the "Strategic Question": *"What would the trend look like if we faced 'Average' or 'Normal' risk conditions every day?"*
+
+It uses **Monte Carlo Historical Replay** to simulate 100s of historical covariate scenarios for every time point, averaging the predictions to smooth out volatility.
+
+*   **Mode 1: Forensic (Standard `transform`)**: Removes specific daily noise. "Did my factory break down *today*?"
+*   **Mode 2: Strategic (`transform_integrated`)**: Removes the entire risk profile. "Is my business growing year-over-year, ignoring weather volatility?"
+
+```python
+from decants import FastLoessDecanter
+
+# 1. Setup & Fit
+model = FastLoessDecanter(span=0.5)
+model.fit(time, sales, weather_data)
+
+# 2. Get the "Forensic" view (Did we fail today?)
+clean_sales = model.transform(time, weather_data).adjusted_series
+
+# 3. Get the "Strategic" view (Are we growing long-term?)
+# Replays history to normalize for climate risk
+normalized_sales = model.transform_integrated(time, weather_data, n_samples=200)
+```
+
+*Compatibility Note: This feature is critical for Non-Linear models (LOESS, GAM, GP) where `Average(Input) != Output(Average)`. For Linear models (ARIMAX, Prophet), it is mathematically redundant and raises a warning.*
+
+### 5. Handling Small Datasets (N=120)
 
 For smaller datasets (e.g., 10 years of monthly data), overly complex models (TVP, Deep Learning) can overfit. **Decants** defaults to robust configurations:
 
@@ -88,7 +117,7 @@ For smaller datasets (e.g., 10 years of monthly data), overly complex models (TV
 *   **Prophet:** Use MCMC sampling or tighter priors if needed.
 *   **DoubleML:** Use `interpolation` mode (K-Fold) instead of strict time-series splitting to maximize data usage for training.
 
-### 5. Causal Inference (Double ML)
+### 6. Causal Inference (Double ML)
 
 When you suspect "Ad Spend" drives "Sales", but "Seasonality" confounds both:
 

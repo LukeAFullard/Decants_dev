@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import datetime
 from typing import Optional, Union, Dict, Any, Tuple
 from sklearn.neighbors import NearestNeighbors
 from sklearn.linear_model import LinearRegression
@@ -8,8 +9,9 @@ from scipy.interpolate import RegularGridInterpolator
 
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 
-class FastLoessDecanter(BaseDecanter):
+class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
     """
     FastLoessDecanter: Implements WRTDS-style covariate adjustment using
     grid-based local regression (Multivariate LOESS).
@@ -71,21 +73,12 @@ class FastLoessDecanter(BaseDecanter):
 
         C = X_aligned.values
 
-        # 1. Prepare Data
-        self.t_train = np.array(t).reshape(-1, 1)
-        self.c_train = np.array(C) # Support multiple covariates?
-        # The technical report says "Assumes 1 covariate for grid simplicity".
-        # If C has multiple columns, grid construction becomes complex (N-dim grid).
-        # We will assume 1 covariate for now as per report "Assumes 1 covariate".
-        # But we should handle it gracefully or support it.
-        # Report: "Assumes 1 covariate for grid simplicity"
-        if self.c_train.shape[1] > 1:
-             # For now, let's warn or error. Or just use first one?
-             # The methodology description heavily implies 2D surface (Time x Covariate).
-             # Let's restrict to 1 covariate for FastLoessDecanter for now.
-             if self.c_train.shape[1] > 1:
-                 raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
+        # 1 covariate restriction
+        if C.shape[1] > 1:
+             raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
 
+        self.t_train = np.array(t).reshape(-1, 1) # Assign self.t_train
+        self.c_train = np.array(C)
         self.c_train = self.c_train.reshape(-1, 1)
         self.y_train = np.array(y_aligned.values)
         self.baseline_c = np.median(self.c_train) # Default baseline is median
@@ -112,7 +105,8 @@ class FastLoessDecanter(BaseDecanter):
 
         nbrs_engine = NearestNeighbors(n_neighbors=n_neighbors).fit(self.X_scaled)
 
-        grid_effects = np.zeros((self.grid_res, self.grid_res))
+        # Changed: Store Predicted Y instead of Effect to enable Integration
+        grid_preds = np.zeros((self.grid_res, self.grid_res))
 
         # Loop through grid nodes (This is the heavy lifting, done only once)
         for i, t_val in enumerate(t_grid):
@@ -127,9 +121,6 @@ class FastLoessDecanter(BaseDecanter):
                 indices = indices[0]
                 dists = dists[0]
 
-                # Validation: If nearest neighbor is too far, effect is NaN (or 0)
-                # (Skipped for brevity as per report, but good to keep in mind)
-
                 # Get Local Data
                 X_local = self.X_train[indices] # Unscaled for regression
                 y_local = self.y_train[indices]
@@ -141,27 +132,26 @@ class FastLoessDecanter(BaseDecanter):
                 try:
                     reg.fit(X_local, y_local, sample_weight=weights)
 
-                    # Calculate Effect at this Grid Node
-                    # Effect = Beta_c * (Grid_C - Baseline)
-                    # X_local columns are [t, c]
-                    # coef_ corresponds to [t, c]
-                    beta_c = reg.coef_[1] # Coefficient for covariate
-                    effect = beta_c * (c_val - self.baseline_c)
-
-                    grid_effects[i, j] = effect
+                    # Calculate Predicted Y at this Grid Node
+                    prediction = reg.predict(query_point)[0]
+                    grid_preds[i, j] = prediction
                 except Exception:
-                    # Fallback if fit fails (e.g. singular matrix)
-                    grid_effects[i, j] = 0.0
+                    # Fallback if fit fails: Use mean of local neighborhood
+                    # Using 0.0 is dangerous as it can introduce massive artifacts.
+                    if len(y_local) > 0:
+                         grid_preds[i, j] = np.average(y_local, weights=weights)
+                    else:
+                         grid_preds[i, j] = np.mean(self.y_train) # Last resort fallback
 
         # 4. Create Interpolator
         # We use nearest extrapolation to avoid crashing at edges if we are slightly outside grid,
         # but the local regression handles the trend logic.
         # RegularGridInterpolator requires grid points to be strictly ascending.
         self.interpolator = RegularGridInterpolator(
-            (t_grid, c_grid), grid_effects,
+            (t_grid, c_grid), grid_preds,
             method='linear',
             bounds_error=False,
-            fill_value=None # Extrapolate linearly/nearest if needed (scipy >= 0.14)
+            fill_value=None
         )
 
         self._log_event("fit_complete", {"grid_res": self.grid_res, "span": self.span})
@@ -190,15 +180,22 @@ class FastLoessDecanter(BaseDecanter):
         if C.shape[1] > 1:
              raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
 
-        # Look up the effect for every actual data point
+        # Look up the predicted Y for every actual data point
         points = np.column_stack((t, C.ravel()))
-        estimated_effects = self.interpolator(points)
+        estimated_preds = self.interpolator(points)
 
-        # Handle any NaNs from interpolation if extrapolation failed (though fill_value=None usually extrapolates)
-        # If scipy version is old, fill_value=None might raise error or NaN.
-        if np.isnan(estimated_effects).any():
-             # Fill with 0 or Nearest?
-             estimated_effects = np.nan_to_num(estimated_effects)
+        # Look up the predicted Y for Baseline Scenario
+        baseline_points = np.column_stack((t, np.full(len(t), self.baseline_c)))
+        baseline_preds = self.interpolator(baseline_points)
+
+        # Handle NaNs
+        if np.isnan(estimated_preds).any():
+             estimated_preds = np.nan_to_num(estimated_preds)
+        if np.isnan(baseline_preds).any():
+             baseline_preds = np.nan_to_num(baseline_preds)
+
+        # Effect = Pred(Actual) - Pred(Baseline)
+        estimated_effects = estimated_preds - baseline_preds
 
         # Decant
         y_adjusted = y_aligned.values - estimated_effects
@@ -227,3 +224,35 @@ class FastLoessDecanter(BaseDecanter):
             # We could serialize grid_values if we wanted, but it might be large.
             # "grid_values": self.interpolator.values.tolist() if self.interpolator else None
         }
+
+    def predict_batch(self, X):
+        """
+        Helper for MarginalizationMixin.
+        Returns the full predicted Y from the interpolated surface.
+        Args:
+            X: [Time, Covariates]
+        """
+        if self.interpolator is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        # X is passed from mixin as np.array (possibly object if datetime)
+        # X[:, 0] is t, X[:, 1:] is C.
+
+        X_t = X[:, 0]
+        X_c = X[:, 1:]
+
+        # Ensure Time is numeric relative to t_start
+        if isinstance(X_t[0], (pd.Timestamp, np.datetime64, datetime.datetime, datetime.date)):
+             idx = pd.Index(X_t)
+             numeric_t = self._prepare_time(idx)
+        else:
+             numeric_t = X_t.astype(float) # Ensure float
+
+        # Explicitly cast covariates to float to avoid object-dtype errors in interpolator
+        # This handles cases where mixed types in stack caused object array
+        numeric_c = X_c.astype(float)
+
+        # Re-stack
+        X_final = np.column_stack([numeric_t, numeric_c])
+
+        return self.interpolator(X_final)
