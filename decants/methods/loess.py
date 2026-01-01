@@ -1,0 +1,229 @@
+import numpy as np
+import pandas as pd
+from typing import Optional, Union, Dict, Any, Tuple
+from sklearn.neighbors import NearestNeighbors
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+from scipy.interpolate import RegularGridInterpolator
+
+from decants.base import BaseDecanter
+from decants.objects import DecantResult
+
+class FastLoessDecanter(BaseDecanter):
+    """
+    FastLoessDecanter: Implements WRTDS-style covariate adjustment using
+    grid-based local regression (Multivariate LOESS).
+
+    Methodology: Multivariate Weighted Local Regression (Generalized WRTDS)
+    Primary Use Case: Empirical, "Assumption-Free" adjustment of data where
+    relationships are complex, non-monotonic, or prone to regime shifts.
+    """
+    def __init__(self, span: float = 0.3, grid_resolution: int = 50, degree: int = 1):
+        super().__init__()
+        self.span = span  # Percentage of data to use as neighbors (0.1 to 1.0)
+        self.grid_res = grid_resolution # Size of the interpolation grid (50x50)
+        self.degree = degree # 1 = Linear local fit
+        self.scaler = StandardScaler()
+        self.interpolator = None
+        self.baseline_c = 0.0 # Effect is relative to this baseline
+        self._t_start = None
+
+    def _prepare_time(self, index: pd.Index) -> np.ndarray:
+        """Converts index to numeric representation."""
+        if pd.api.types.is_datetime64_any_dtype(index):
+            if self._t_start is None:
+                self._t_start = index.min()
+
+            ref_time = self._t_start
+            # Convert to days since reference
+            return (index - ref_time).total_seconds().to_numpy() / (24 * 3600)
+        else:
+            return index.to_numpy(dtype=float)
+
+    def _tricube_weights(self, distances: np.ndarray) -> np.ndarray:
+        """Standard LOESS weighting function: (1 - u^3)^3"""
+        # Normalize distances to 0-1 range within the neighborhood
+        max_dist = np.max(distances)
+        if max_dist == 0: return np.ones_like(distances)
+        u = distances / max_dist
+        return (1 - u**3)**3
+
+    def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "FastLoessDecanter":
+        """
+        Builds the correction surface.
+        """
+        self._ensure_audit_log()
+
+        common_idx = self._validate_alignment(y, X)
+        y_aligned = y.loc[common_idx]
+        X_aligned = X.loc[common_idx]
+
+        self._log_event("fit_start", {"n_samples": len(y_aligned)})
+
+        # Determine start time if datetime
+        if pd.api.types.is_datetime64_any_dtype(common_idx):
+             self._t_start = common_idx.min()
+
+        t = self._prepare_time(common_idx)
+
+        if isinstance(X_aligned, pd.Series):
+            X_aligned = X_aligned.to_frame()
+
+        C = X_aligned.values
+
+        # 1. Prepare Data
+        self.t_train = np.array(t).reshape(-1, 1)
+        self.c_train = np.array(C) # Support multiple covariates?
+        # The technical report says "Assumes 1 covariate for grid simplicity".
+        # If C has multiple columns, grid construction becomes complex (N-dim grid).
+        # We will assume 1 covariate for now as per report "Assumes 1 covariate".
+        # But we should handle it gracefully or support it.
+        # Report: "Assumes 1 covariate for grid simplicity"
+        if self.c_train.shape[1] > 1:
+             # For now, let's warn or error. Or just use first one?
+             # The methodology description heavily implies 2D surface (Time x Covariate).
+             # Let's restrict to 1 covariate for FastLoessDecanter for now.
+             if self.c_train.shape[1] > 1:
+                 raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
+
+        self.c_train = self.c_train.reshape(-1, 1)
+        self.y_train = np.array(y_aligned.values)
+        self.baseline_c = np.median(self.c_train) # Default baseline is median
+
+        # Combine and Scale for distance calculations
+        self.X_train = np.hstack([self.t_train, self.c_train])
+        self.X_scaled = self.scaler.fit_transform(self.X_train)
+
+        # 2. Define the Grid (The "Skeleton")
+        # We create a mesh covering the min/max of time and covariates
+        t_min, t_max = self.t_train.min(), self.t_train.max()
+        c_min, c_max = self.c_train.min(), self.c_train.max()
+
+        # Add small buffer to grid to cover edges
+        t_pad = (t_max - t_min) * 0.05
+        c_pad = (c_max - c_min) * 0.05
+
+        t_grid = np.linspace(t_min - t_pad, t_max + t_pad, self.grid_res)
+        c_grid = np.linspace(c_min - c_pad, c_max + c_pad, self.grid_res)
+
+        # 3. Fit Local Models at Grid Nodes
+        n_neighbors = int(self.span * len(self.y_train))
+        n_neighbors = max(n_neighbors, self.degree + 2) # Ensure enough points for regression
+
+        nbrs_engine = NearestNeighbors(n_neighbors=n_neighbors).fit(self.X_scaled)
+
+        grid_effects = np.zeros((self.grid_res, self.grid_res))
+
+        # Loop through grid nodes (This is the heavy lifting, done only once)
+        for i, t_val in enumerate(t_grid):
+            for j, c_val in enumerate(c_grid):
+
+                # Scale the query point
+                query_point = np.array([[t_val, c_val]])
+                query_scaled = self.scaler.transform(query_point)
+
+                # Find neighbors
+                dists, indices = nbrs_engine.kneighbors(query_scaled)
+                indices = indices[0]
+                dists = dists[0]
+
+                # Validation: If nearest neighbor is too far, effect is NaN (or 0)
+                # (Skipped for brevity as per report, but good to keep in mind)
+
+                # Get Local Data
+                X_local = self.X_train[indices] # Unscaled for regression
+                y_local = self.y_train[indices]
+                weights = self._tricube_weights(dists)
+
+                # Fit Weighted Linear Regression
+                # Model: y = b0 + b1*t + b2*c
+                reg = LinearRegression()
+                try:
+                    reg.fit(X_local, y_local, sample_weight=weights)
+
+                    # Calculate Effect at this Grid Node
+                    # Effect = Beta_c * (Grid_C - Baseline)
+                    # X_local columns are [t, c]
+                    # coef_ corresponds to [t, c]
+                    beta_c = reg.coef_[1] # Coefficient for covariate
+                    effect = beta_c * (c_val - self.baseline_c)
+
+                    grid_effects[i, j] = effect
+                except Exception:
+                    # Fallback if fit fails (e.g. singular matrix)
+                    grid_effects[i, j] = 0.0
+
+        # 4. Create Interpolator
+        # We use nearest extrapolation to avoid crashing at edges if we are slightly outside grid,
+        # but the local regression handles the trend logic.
+        # RegularGridInterpolator requires grid points to be strictly ascending.
+        self.interpolator = RegularGridInterpolator(
+            (t_grid, c_grid), grid_effects,
+            method='linear',
+            bounds_error=False,
+            fill_value=None # Extrapolate linearly/nearest if needed (scipy >= 0.14)
+        )
+
+        self._log_event("fit_complete", {"grid_res": self.grid_res, "span": self.span})
+        return self
+
+    def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
+        """
+        Applies the correction surface to the data.
+        """
+        self._ensure_audit_log()
+
+        if self.interpolator is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        common_idx = self._validate_alignment(y, X)
+        y_aligned = y.loc[common_idx]
+        X_aligned = X.loc[common_idx]
+
+        if isinstance(X_aligned, pd.Series):
+            X_aligned = X_aligned.to_frame()
+
+        t = self._prepare_time(common_idx)
+        C = X_aligned.values
+
+        # 1 covariate restriction
+        if C.shape[1] > 1:
+             raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
+
+        # Look up the effect for every actual data point
+        points = np.column_stack((t, C.ravel()))
+        estimated_effects = self.interpolator(points)
+
+        # Handle any NaNs from interpolation if extrapolation failed (though fill_value=None usually extrapolates)
+        # If scipy version is old, fill_value=None might raise error or NaN.
+        if np.isnan(estimated_effects).any():
+             # Fill with 0 or Nearest?
+             estimated_effects = np.nan_to_num(estimated_effects)
+
+        # Decant
+        y_adjusted = y_aligned.values - estimated_effects
+
+        result = DecantResult(
+            original_series=y_aligned,
+            adjusted_series=pd.Series(y_adjusted, index=common_idx, name=y.name),
+            covariate_effect=pd.Series(estimated_effects, index=common_idx, name="covariate_effect"),
+            model=self.interpolator,
+            stats={
+                "baseline_c": self.baseline_c,
+                "span": self.span,
+                "grid_res": self.grid_res
+            }
+        )
+
+        return result
+
+    def get_model_params(self) -> Dict[str, Any]:
+        """Return fitted parameters for the audit trail."""
+        return {
+            "span": self.span,
+            "grid_resolution": self.grid_res,
+            "degree": self.degree,
+            "baseline_c": self.baseline_c,
+            # We could serialize grid_values if we wanted, but it might be large.
+            # "grid_values": self.interpolator.values.tolist() if self.interpolator else None
+        }
