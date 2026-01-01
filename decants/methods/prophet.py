@@ -4,8 +4,9 @@ from prophet import Prophet
 from typing import Union, Optional, List, Dict, Any
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 
-class ProphetDecanter(BaseDecanter):
+class ProphetDecanter(BaseDecanter, MarginalizationMixin):
     """
     Prophet-based Decanter.
     Uses Bayesian Decomposition (Prophet) to separate covariate effects from trend/seasonality.
@@ -19,6 +20,7 @@ class ProphetDecanter(BaseDecanter):
         self.model_kwargs = kwargs
         self.model = None
         self.regressor_names = []
+        self.model_type = 'linear' # Flag for MarginalizationMixin (Prophet is generally additive linear)
         self._log_event("init", {"model_kwargs": str(kwargs)})
 
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "ProphetDecanter":

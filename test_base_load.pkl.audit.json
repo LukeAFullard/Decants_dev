@@ -1,5 +1,5 @@
 {
-  "created_at": "2025-12-30T11:29:41.943337",
+  "created_at": "2026-01-01T22:36:55.838987",
   "library_versions": {
     "python": "3.12.12 (main, Nov  7 2025, 00:07:10) [GCC 13.3.0]",
     "platform": "Linux-6.8.0-x86_64-with-glibc2.39",
@@ -8,7 +8,7 @@
   },
   "history": [
     {
-      "timestamp": "2025-12-30T11:29:41.943361",
+      "timestamp": "2026-01-01T22:36:55.839004",
       "type": "init",
       "details": {
         "n_splines": 5,
@@ -17,21 +17,20 @@
       }
     },
     {
-      "timestamp": "2025-12-30T11:29:41.944398",
+      "timestamp": "2026-01-01T22:36:55.839720",
       "type": "fit_start",
       "details": {
-        "y_hash": "3b1b23c9c48655ccdb6c4acc20a0c19a73217fa2a9171688982c1da6c5126d9d",
-        "X_hash": "be99e6f263bf4448bdd0f8c8fe10bc959890e6951f0d460ce4828e96b5a7fe77",
+        "y_hash": "2cfc2d56093f02489d60a3f9920f291754ea9dc585af94b4ae0efeadf21c74db",
+        "X_hash": "08c28f46e4a5aea9bd53ad6771065eb5b18bd19bae1d4bfcce7755fb974a8af5",
         "kwargs": "{}"
       }
     },
     {
-      "timestamp": "2025-12-30T11:29:42.102343",
+      "timestamp": "2026-01-01T22:36:55.852715",
       "type": "optimization",
       "details": {
-        "method": "gridsearch",
-        "success": true,
-        "lam": "[[np.float64(1000.0)], [np.float64(1000.0)]]"
+        "method": "fit",
+        "lam": "[[0.6], [0.6]]"
       }
     }
   ],

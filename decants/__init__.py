@@ -8,6 +8,7 @@ from .methods.double_ml import DoubleMLDecanter
 from .methods.gaussian_process import GPDecanter
 from .methods.loess import FastLoessDecanter
 from .utils.benchmarking import DecantBenchmarker
+from .integration import MarginalizationMixin
 
 __version__ = "0.1.0"
 
@@ -21,5 +22,6 @@ __all__ = [
     "DoubleMLDecanter",
     "GPDecanter",
     "FastLoessDecanter",
-    "DecantBenchmarker"
+    "DecantBenchmarker",
+    "MarginalizationMixin"
 ]

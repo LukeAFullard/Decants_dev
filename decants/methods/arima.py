@@ -4,8 +4,9 @@ from statsmodels.tsa.statespace.sarimax import SARIMAX
 from typing import Union, Optional, List, Dict, Any, Tuple
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 
-class ArimaDecanter(BaseDecanter):
+class ArimaDecanter(BaseDecanter, MarginalizationMixin):
     """
     ARIMAX-based Decanter using statsmodels.
     Uses Parametric State-Space modeling (SARIMAX) to estimate covariate effects.
@@ -26,6 +27,7 @@ class ArimaDecanter(BaseDecanter):
         self.model = None
         self.results = None
         self.exog_names = []
+        self.model_type = 'linear' # Flag for MarginalizationMixin
 
         self._log_event("init", {
             "order": str(order),
