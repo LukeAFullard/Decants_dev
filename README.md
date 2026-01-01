@@ -9,6 +9,7 @@
 *   **ARIMAX:** Parametric state-space modeling for autocorrelated processes (via `statsmodels`).
 *   **Double Machine Learning:** Causal residualization for high-dimensional confounding (via `sklearn`).
 *   **Gaussian Processes:** Non-parametric Bayesian regression (Kriging) for irregularly sampled time series.
+*   **LOESS (Generalized WRTDS):** Empirical, assumption-free adjustment for complex, non-stationary relationships.
 *   **Robust Diagnostics:** Variance reduction, orthogonality checks, and correlation analysis.
 *   **Unified API:** Consistent `fit`, `transform`, and `DecantResult` interface.
 
@@ -64,7 +65,22 @@ print(result.stats['uncertainty'].head())
 result.plot()
 ```
 
-### 3. Handling Small Datasets (N=120)
+### 3. Complex Non-Stationary Relationships (LOESS)
+
+When the relationship between the covariate and the target changes over time (e.g., a "Regime Shift"), standard global models fail. `FastLoessDecanter` builds a local correction surface.
+
+```python
+from decants import FastLoessDecanter
+
+# Example: A covariate that has a positive effect in 2020 but negative in 2022
+decanter = FastLoessDecanter(span=0.3, grid_resolution=50)
+result = decanter.fit_transform(y, X)
+
+# Visualize the locally varying effect
+result.plot()
+```
+
+### 4. Handling Small Datasets (N=120)
 
 For smaller datasets (e.g., 10 years of monthly data), overly complex models (TVP, Deep Learning) can overfit. **Decants** defaults to robust configurations:
 
@@ -72,7 +88,7 @@ For smaller datasets (e.g., 10 years of monthly data), overly complex models (TV
 *   **Prophet:** Use MCMC sampling or tighter priors if needed.
 *   **DoubleML:** Use `interpolation` mode (K-Fold) instead of strict time-series splitting to maximize data usage for training.
 
-### 4. Causal Inference (Double ML)
+### 5. Causal Inference (Double ML)
 
 When you suspect "Ad Spend" drives "Sales", but "Seasonality" confounds both:
 
