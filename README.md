@@ -8,6 +8,7 @@
 *   **Bayesian Decomposition:** Robust handling of holidays and events (via `Prophet`).
 *   **ARIMAX:** Parametric state-space modeling for autocorrelated processes (via `statsmodels`).
 *   **Double Machine Learning:** Causal residualization for high-dimensional confounding (via `sklearn`).
+*   **Gaussian Processes:** Non-parametric Bayesian regression (Kriging) for irregularly sampled time series.
 *   **Robust Diagnostics:** Variance reduction, orthogonality checks, and correlation analysis.
 *   **Unified API:** Consistent `fit`, `transform`, and `DecantResult` interface.
 
@@ -47,7 +48,23 @@ print(f"Variance Reduced: {result.stats['pseudo_r2']:.2%}")
 result.plot()
 ```
 
-### 2. Handling Small Datasets (N=120)
+### 2. Handling Irregular Data (Gaussian Processes)
+
+When data has gaps or irregular timestamps, standard lag-based methods fail. The `GPDecanter` uses Gaussian Processes to handle continuous time natively.
+
+```python
+from decants import GPDecanter
+
+# Data with irregular gaps
+decanter = GPDecanter(kernel_nu=1.5) # Matern 3/2 kernel for robustness
+result = decanter.fit_transform(y_irregular, X_irregular)
+
+# The result includes the isolated covariate effect and uncertainty bounds
+print(result.stats['uncertainty'].head())
+result.plot()
+```
+
+### 3. Handling Small Datasets (N=120)
 
 For smaller datasets (e.g., 10 years of monthly data), overly complex models (TVP, Deep Learning) can overfit. **Decants** defaults to robust configurations:
 
@@ -55,7 +72,7 @@ For smaller datasets (e.g., 10 years of monthly data), overly complex models (TV
 *   **Prophet:** Use MCMC sampling or tighter priors if needed.
 *   **DoubleML:** Use `interpolation` mode (K-Fold) instead of strict time-series splitting to maximize data usage for training.
 
-### 3. Causal Inference (Double ML)
+### 4. Causal Inference (Double ML)
 
 When you suspect "Ad Spend" drives "Sales", but "Seasonality" confounds both:
 

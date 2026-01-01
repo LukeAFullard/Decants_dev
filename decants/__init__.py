@@ -5,6 +5,7 @@ from .methods.prophet import ProphetDecanter
 from .methods.arima import ArimaDecanter
 from .methods.ml import MLDecanter
 from .methods.double_ml import DoubleMLDecanter
+from .methods.gaussian_process import GPDecanter
 from .utils.benchmarking import DecantBenchmarker
 
 __version__ = "0.1.0"
@@ -17,5 +18,6 @@ __all__ = [
     "ArimaDecanter",
     "MLDecanter",
     "DoubleMLDecanter",
+    "GPDecanter",
     "DecantBenchmarker"
 ]
