@@ -1,16 +1,16 @@
 {
-  "created_at": "2026-01-02T18:34:35.944062",
+  "created_at": "2026-01-02T20:17:14.136940",
   "library_versions": {
     "python": "3.12.12 (main, Nov  7 2025, 00:07:10) [GCC 13.3.0]",
     "platform": "Linux-6.8.0-x86_64-with-glibc2.39",
     "pandas": "2.3.3",
     "numpy": "2.4.0",
     "decants": "unknown",
-    "source_hash": "3ca6b0a74877024b5dc5fd02bde884ee673f36659147023441bfe4cac1ea1d12"
+    "source_hash": "a544953e49de7a6f7e824f5dd8fd14de97c6b224918b0b44490058fec551f410"
   },
   "history": [
     {
-      "timestamp": "2026-01-02T18:34:35.944081",
+      "timestamp": "2026-01-02T20:17:14.136964",
       "type": "init",
       "details": {
         "n_splines": 5,
@@ -19,7 +19,7 @@
       }
     },
     {
-      "timestamp": "2026-01-02T18:34:35.944826",
+      "timestamp": "2026-01-02T20:17:14.137754",
       "type": "fit_start",
       "details": {
         "y_hash": "e7908d6ad3b9a47e0ce1a407b265ecb7ebecc5ebe7efef03a2208532132f64bc",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "timestamp": "2026-01-02T18:34:36.069848",
+      "timestamp": "2026-01-02T20:17:14.281748",
       "type": "optimization",
       "details": {
         "method": "gridsearch",

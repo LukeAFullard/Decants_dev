@@ -89,3 +89,6 @@ To execute the full validation suite for a new release:
 1.  Run automated regression tests: `pytest tests/`
 2.  Execute "Deep Validation" script (to be created): `python scripts/validate_release.py`
 3.  Generate Validation Report from template.
+
+**Note on Audit Mode:**
+When running iterative validation tests (where artifacts are not intended for final legal discovery), it is recommended to disable the automatic audit log generation (if supported) or carefully exclude `*.audit.json` files from version control to prevent "git noise" caused by timestamp updates.
