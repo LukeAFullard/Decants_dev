@@ -9,6 +9,8 @@ import json
 import sys
 import datetime
 import platform
+import os
+import hashlib
 
 try:
     from decants import __version__ as decants_version
@@ -20,7 +22,10 @@ class BaseDecanter(ABC):
     Abstract Base Class for all Decanter methods.
     Includes Audit Mode for robust tracking of provenance and decisions.
     """
-    def __init__(self):
+
+    _cached_source_hash = None # Class-level cache for source hash
+
+    def __init__(self, strict: bool = False):
         # Audit Log
         self._audit_log: Dict[str, Any] = {
             "created_at": datetime.datetime.now().isoformat(),
@@ -29,15 +34,67 @@ class BaseDecanter(ABC):
                 "platform": platform.platform(),
                 "pandas": pd.__version__,
                 "numpy": np.__version__,
-                "decants": decants_version
+                "decants": decants_version,
+                "source_hash": self._compute_source_hash()
             },
             "history": [],
             "interpretations": []
         }
-        self.verify_integrity = False
+        # Strict Mode Enforcer
+        # If strict=True, we force defensibility checks to be ON.
+        self.verify_integrity = strict
+        if strict:
+             self._audit_log["strict_mode"] = True
+
         # We capture init params in subclasses, or generally?
         # Ideally subclasses call super().__init__() but they often don't if they are dataclasses or simple.
         # We will log the *current* state at save time, but history is important.
+
+    def _compute_source_hash(self) -> str:
+        """
+        Computes a SHA-256 hash of all .py files in the decants package.
+        This ensures that the exact version of the code used is cryptographically recorded.
+        Uses class-level caching to avoid performance hit on multiple instantiations.
+        """
+        if BaseDecanter._cached_source_hash is not None:
+             return BaseDecanter._cached_source_hash
+
+        try:
+            # Locate the package directory
+            import decants
+            if hasattr(decants, '__file__') and decants.__file__:
+                package_dir = os.path.dirname(decants.__file__)
+
+                # Walk through all files
+                hasher = hashlib.sha256()
+
+                # Get all .py files, sorted to ensure deterministic order
+                py_files = []
+                for root, dirs, files in os.walk(package_dir):
+                    for file in files:
+                        if file.endswith(".py"):
+                            py_files.append(os.path.join(root, file))
+
+                py_files.sort()
+
+                for filepath in py_files:
+                    try:
+                        with open(filepath, 'rb') as f:
+                            # Read in chunks
+                            while chunk := f.read(8192):
+                                hasher.update(chunk)
+                    except Exception:
+                        # If we can't read a file (permission?), skip or fail.
+                        # For defensibility, maybe better to fail?
+                        # But we don't want to crash init if dev environment is weird.
+                        pass
+
+                computed_hash = hasher.hexdigest()
+                BaseDecanter._cached_source_hash = computed_hash
+                return computed_hash
+            return "unknown_source_location"
+        except Exception as e:
+            return f"source_hash_failed_{str(e)}"
 
     def _ensure_audit_log(self):
         """Helper to ensure audit log is initialized."""

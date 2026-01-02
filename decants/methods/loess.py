@@ -21,8 +21,8 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
     Primary Use Case: Empirical, "Assumption-Free" adjustment of data where
     relationships are complex, non-monotonic, or prone to regime shifts.
     """
-    def __init__(self, span: float = 0.3, grid_resolution: int = 50, degree: int = 1):
-        super().__init__()
+    def __init__(self, span: float = 0.3, grid_resolution: int = 50, degree: int = 1, strict: bool = False):
+        super().__init__(strict=strict)
         self.span = span  # Percentage of data to use as neighbors (0.1 to 1.0)
         self.grid_res = grid_resolution # Size of the interpolation grid (50x50)
         self.degree = degree # 1 = Linear local fit

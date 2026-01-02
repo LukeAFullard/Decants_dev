@@ -13,13 +13,14 @@ class MLDecanter(BaseDecanter, MarginalizationMixin):
     ML-based Decanter using scikit-learn.
     Uses Time Series Cross-Validation to generate out-of-sample predictions for residualization.
     """
-    def __init__(self, estimator: Optional[BaseEstimator] = None, cv_splits: int = 5):
+    def __init__(self, estimator: Optional[BaseEstimator] = None, cv_splits: int = 5, strict: bool = False):
         """
         Args:
             estimator (BaseEstimator): Scikit-learn regressor. Defaults to RandomForestRegressor.
             cv_splits (int): Number of splits for TimeSeriesSplit.
+            strict (bool): Enforce strict mode for defensibility.
         """
-        super().__init__()
+        super().__init__(strict=strict)
         self.estimator = estimator if estimator is not None else RandomForestRegressor(n_estimators=100, random_state=42)
         self.cv_splits = cv_splits
         self.model = None
