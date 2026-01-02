@@ -9,9 +9,10 @@ import datetime
 
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 from decants.utils.time import prepare_time_feature
 
-class GPDecanter(BaseDecanter):
+class GPDecanter(BaseDecanter, MarginalizationMixin):
     """
     Gaussian Process Decanter for robust removal of covariate effects
     in irregularly sampled time series.
@@ -20,8 +21,8 @@ class GPDecanter(BaseDecanter):
     Primary Use Case: High-precision adjustment of irregularly sampled time series
     with complex, unknown, non-linear covariate relationships.
     """
-    def __init__(self, kernel_nu: float = 1.5, normalize_y: bool = True, random_state: int = 42):
-        super().__init__()
+    def __init__(self, kernel_nu: float = 1.5, normalize_y: bool = True, random_state: int = 42, strict: bool = False):
+        super().__init__(strict=strict)
         self.kernel_nu = kernel_nu
         self.normalize_y = normalize_y
         self.random_state = random_state
@@ -175,3 +176,43 @@ class GPDecanter(BaseDecanter):
             "log_marginal_likelihood": self.model.log_marginal_likelihood_value_
                 if hasattr(self.model, "log_marginal_likelihood_value_") else None
         }
+
+    def predict_batch(self, X: np.ndarray) -> np.ndarray:
+        """
+        Helper for MarginalizationMixin to enable Monte Carlo integration.
+
+        Args:
+            X (np.ndarray): Input batch of shape [n_samples, 1 + n_features].
+                            Column 0 is Time (will be processed relative to _t_start).
+                            Columns 1: are Covariates (will be scaled).
+        """
+        if self.model is None:
+            raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        # X is passed from mixin as np.array (possibly object if datetime)
+        # X[:, 0] is t, X[:, 1:] is C.
+
+        X_t = X[:, 0]
+        X_c = X[:, 1:]
+
+        # 1. Prepare Time
+        # Ensure Time is numeric relative to t_start
+        # If the input was constructed with timestamps, X_t elements are Timestamps
+        if isinstance(X_t[0], (pd.Timestamp, np.datetime64, datetime.datetime, datetime.date)):
+             idx = pd.Index(X_t)
+             # Reuse prepare_time_feature but handle the fact it expects an Index
+             numeric_t, _ = prepare_time_feature(idx, self._t_start)
+        else:
+             numeric_t = X_t.astype(float)
+
+        # 2. Prepare Covariates
+        # Explicitly cast to float and Scale using the stored scaler
+        C_raw = X_c.astype(float)
+        C_scaled = self.X_scaler.transform(C_raw)
+
+        # 3. Combine
+        t_in = numeric_t.reshape(-1, 1)
+        X_full = np.hstack([t_in, C_scaled])
+
+        # 4. Predict
+        return self.model.predict(X_full)

@@ -12,12 +12,13 @@ class ProphetDecanter(BaseDecanter, MarginalizationMixin):
     Prophet-based Decanter.
     Uses Bayesian Decomposition (Prophet) to separate covariate effects from trend/seasonality.
     """
-    def __init__(self, **kwargs):
+    def __init__(self, strict: bool = False, **kwargs):
         """
         Args:
+            strict: Enforce strict mode.
             **kwargs: Arguments passed to Prophet constructor (e.g. interval_width, daily_seasonality).
         """
-        super().__init__()
+        super().__init__(strict=strict)
         self.model_kwargs = kwargs
         self.model = None
         self.regressor_names = []

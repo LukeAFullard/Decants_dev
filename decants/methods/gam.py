@@ -15,14 +15,15 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
     Uses Semi-Parametric Smoothing to separate covariate effects from time trend.
     """
     def __init__(self, n_splines: int = 25, lam: Union[float, list] = 0.6,
-                 trend_term: str = 'spline'):
+                 trend_term: str = 'spline', strict: bool = False):
         """
         Args:
             n_splines (int): Number of splines to use for terms.
             lam (float or list): Smoothing parameter(s).
             trend_term (str): 'spline' for s(0) or 'linear' for l(0) for the time index.
+            strict: Enforce strict mode.
         """
-        super().__init__() # Initialize Audit Log
+        super().__init__(strict=strict) # Initialize Audit Log
         self.n_splines = n_splines
         self.lam = lam
         self.trend_term = trend_term

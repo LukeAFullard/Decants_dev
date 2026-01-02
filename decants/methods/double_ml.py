@@ -25,7 +25,8 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
         n_splits: int = 5,
         min_train_size: int = 20,
         allow_future: bool = False,
-        random_state: int = 42
+        random_state: int = 42,
+        strict: bool = False
     ):
         """
         Args:
@@ -35,8 +36,9 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
             min_train_size: Minimum training size for TimeSeriesSplitter.
             allow_future: If True, forces 'interpolation' mode regardless of splitter arg.
             random_state: Random state for KFold if used.
+            strict: Enforce strict mode.
         """
-        super().__init__()
+        super().__init__(strict=strict)
         self.nuisance_model = nuisance_model if nuisance_model is not None else Ridge(alpha=1.0)
         self.splitter_arg = splitter
         self.n_splits = n_splits

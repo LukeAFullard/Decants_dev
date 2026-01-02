@@ -13,14 +13,15 @@ class ArimaDecanter(BaseDecanter, MarginalizationMixin):
     """
     def __init__(self, order: Tuple[int, int, int] = (1, 0, 0),
                  seasonal_order: Tuple[int, int, int, int] = (0, 0, 0, 0),
-                 trend: Optional[str] = None):
+                 trend: Optional[str] = None, strict: bool = False):
         """
         Args:
             order (tuple): The (p,d,q) order of the model for the number of AR parameters, differences, and MA parameters.
             seasonal_order (tuple): The (P,D,Q,s) order of the seasonal component.
             trend (str): Parameter controlling the deterministic trend polynomial.
+            strict: Enforce strict mode.
         """
-        super().__init__()
+        super().__init__(strict=strict)
         self.order = order
         self.seasonal_order = seasonal_order
         self.trend = trend
