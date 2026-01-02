@@ -1,3 +1,5 @@
+<img src="assets/Decants_logo.png" width="600">
+
 # Decants: Robust Time Series Covariate Adjustment
 
 **Decants** ("Decant Time Series") is a professional-grade Python library designed to isolate intrinsic signals from observed time series by removing the effects of exogenous covariates. It implements "Gold Standard" methodologies—from Semi-Parametric Smoothing (GAMs) to Bayesian Decomposition (Prophet) and Double Machine Learning—ensuring results are statistically defensible for high-stakes analysis (e.g., legal, financial, or scientific contexts).
