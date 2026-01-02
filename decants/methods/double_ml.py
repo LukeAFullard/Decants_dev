@@ -118,6 +118,13 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
         y_aligned = y.loc[common_idx]
         X_aligned = X.loc[common_idx]
 
+        # STRICT DEFENSIBILITY: Enforce Sorting
+        # DoubleML with TimeSeriesSplit requires strict temporal ordering.
+        # If the input was shuffled, we must sort it to avoid leakage.
+        if not y_aligned.index.is_monotonic_increasing:
+             y_aligned = y_aligned.sort_index()
+             X_aligned = X_aligned.sort_index()
+
         # Prepare storage for OOS predictions
         # Initialize with NaN
         covariate_effect = pd.Series(np.nan, index=y_aligned.index)

@@ -25,10 +25,10 @@ class TimeSeriesSplitter(BaseSplitter):
         # Enforce or check sorting
         if isinstance(X, (pd.DataFrame, pd.Series)):
              if not X.index.is_monotonic_increasing:
-                  # Warning for now, or error? Strict defensibility suggests warning the user.
-                  # But typically TimeSeriesSplit assumes implicit order.
-                  import warnings
-                  warnings.warn("TimeSeriesSplitter input index is not monotonic increasing. Ensure data is sorted by time!", UserWarning)
+                  # STRICT DEFENSIBILITY: Raise Error.
+                  # TimeSeriesSplit on unsorted data effectively becomes a random shuffle split,
+                  # causing massive future leakage. This must be prevented.
+                  raise ValueError("TimeSeriesSplitter input index must be sorted by time. Unsorted data causes future leakage.")
 
         n_samples = len(X)
         if n_samples < self.min_train_size + self.n_splits:

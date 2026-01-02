@@ -45,12 +45,16 @@ def prepare_time_feature(index: pd.Index, t_start: Optional[pd.Timestamp] = None
              index = pd.to_datetime(index)
 
         delta = (index - t_start)
-        # Handle potential NaTs
+
+        # STRICT DEFENSIBILITY: Do not silently pass NaNs.
+        # If the time index has NaTs (missing time), we cannot compute a trend.
         if delta.isna().any():
-             # Fill NaNs with 0 or handle? For now, let it be NaN
-             pass
+             raise ValueError("Input Index contains NaT (Missing Time). Cannot proceed safely.")
 
         return delta.total_seconds().to_numpy() / (24 * 3600), t_start
     else:
         # Assume numeric.
-        return index.to_numpy(dtype=float), t_start
+        vals = index.to_numpy(dtype=float)
+        if np.isnan(vals).any():
+             raise ValueError("Input Index contains NaN. Cannot proceed safely.")
+        return vals, t_start

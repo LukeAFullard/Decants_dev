@@ -144,6 +144,11 @@ class MLDecanter(BaseDecanter, MarginalizationMixin):
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
+        # STRICT DEFENSIBILITY: Enforce Sorting
+        if not y.index.is_monotonic_increasing:
+             y = y.sort_index()
+             X = X.sort_index()
+
         tscv = TimeSeriesSplit(n_splits=self.cv_splits)
 
         covariate_effect = np.full(len(y), np.nan)

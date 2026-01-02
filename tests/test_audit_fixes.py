@@ -44,7 +44,8 @@ class TestAuditFixes(unittest.TestCase):
         X = pd.DataFrame({"a": [1, 2, 3, 4]}, index=idx)
         tscv = TimeSeriesSplitter(n_splits=2, min_train_size=1)
 
-        with self.assertWarns(UserWarning):
+        # Now raises ValueError for defensibility
+        with self.assertRaises(ValueError):
             list(tscv.split(X))
 
     def test_double_ml_small_data_robustness(self):
