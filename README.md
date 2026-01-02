@@ -1,4 +1,6 @@
-<img src="assets/Decants_logo.png" width="600">
+<div align="center">
+  <img src="assets/Decants_logo.png" alt="decants logo" width="600"/>
+</div>
 
 # Decants: Robust Time Series Covariate Adjustment
 
