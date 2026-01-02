@@ -116,8 +116,12 @@ class BaseDecanter(ABC):
         # Ensure audit log is up to date with current params if possible
         # (Subclasses might store params differently, but we have history)
 
-        with open(filepath, 'wb') as f:
-            pickle.dump(self, f)
+        try:
+            with open(filepath, 'wb') as f:
+                pickle.dump(self, f)
+        except Exception as e:
+            # Provide a more helpful error if pickling fails (e.g. unpicklable model objects)
+            raise RuntimeError(f"Failed to save model via pickle. Ensure all model components are serializable. Error: {e}") from e
 
         # Helper to serialize non-json types in log
         def default(o):

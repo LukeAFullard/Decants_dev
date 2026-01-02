@@ -171,7 +171,8 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
             print(msg)
             # Add warning to stats so it's visible in the result object
             # (which is what the test checks and what a user would inspect programmatically)
-            self._log_event("warning", {"message": msg})
+            # Also explicitly log to audit trail here to ensure timestamped record
+            self._log_event("warning", {"message": msg, "error_details": str(e)})
 
             # Use a mutable stats dict if possible or just append to the final stats
             # But here we build stats later. We'll store the error to include it.
