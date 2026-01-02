@@ -126,12 +126,26 @@ class ProphetDecanter(BaseDecanter, MarginalizationMixin):
 
         self._log_event("transform_complete", {"stats": stats})
 
+        # Do NOT include full params in result to avoid serialization bloat
+        # Params are accessible via self.model.params if really needed
+        # Safely extract 'k' if present
+        params_summary = {}
+        try:
+             if 'k' in self.model.params:
+                k_val = self.model.params['k']
+                if isinstance(k_val, np.ndarray) and k_val.size > 0:
+                     params_summary['k'] = float(k_val.flat[0])
+                else:
+                     params_summary['k'] = float(k_val)
+        except Exception:
+             pass # Ignore if extraction fails
+
         return DecantResult(
             original_series=y,
             adjusted_series=adjusted,
             covariate_effect=pd.Series(covariate_effect, index=y.index),
             model=self.model,
-            params=self.model.params,
+            params=params_summary, # Lightweight summary
             stats=stats
         )
 

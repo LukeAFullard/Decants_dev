@@ -153,6 +153,16 @@ class ArimaDecanter(BaseDecanter, MarginalizationMixin):
             stats=stats
         )
 
+    def transform_integrated(self, *args, **kwargs):
+        """
+        Override to disable Integration for ARIMAX.
+        """
+        raise NotImplementedError(
+            "Integration (Marginalization) is not supported for ArimaDecanter (State Space Models). "
+            "ARIMA is a linear model where effect isolation is analytically equivalent to subtraction. "
+            "Please use method='transform' (Clean Mode) instead."
+        )
+
     def get_model_params(self) -> Dict[str, Any]:
         """Return fitted SARIMAX parameters."""
         if self.results is None:

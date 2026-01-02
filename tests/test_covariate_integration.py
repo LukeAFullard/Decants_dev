@@ -60,23 +60,16 @@ class TestMarginalization(unittest.TestCase):
         print(f"GAM Integrated at t=0: {integrated[0]}")
 
     def test_linear_warning(self):
-        # Test warning for ArimaDecanter
+        # Test warning/Error for ArimaDecanter
         model = ArimaDecanter()
         # Mock fit to avoid statsmodels optimization time/errors on random data
         model.model_type = 'linear'
 
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            # We don't need to fit to trigger the warning in transform_integrated,
-            # but we need to pass data.
-            try:
-                model.transform_integrated([0], [0])
-            except:
-                pass # expected to fail execution but trigger warning first
+        # Now expecting NotImplementedError instead of just Warning + Execution
+        with self.assertRaises(NotImplementedError) as cm:
+            model.transform_integrated([0], [0])
 
-            # Check if warning was issued
-            has_warning = any("Linear Model" in str(warn.message) for warn in w)
-            self.assertTrue(has_warning, "Should warn about using integration on linear model")
+        self.assertIn("Integration (Marginalization) is not supported", str(cm.exception))
 
 if __name__ == '__main__':
     unittest.main()
