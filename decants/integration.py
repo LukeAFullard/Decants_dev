@@ -31,15 +31,46 @@ class MarginalizationMixin:
             )
 
         # --- 1. SETUP THE "CLIMATE" POOL ---
-        # Ensure C is a proper matrix (2D array)
-        C = np.asarray(C)
-        if C.ndim == 1: C = C.reshape(-1, 1)
 
-        # Select which part of history we want to replay
+        # 1. Apply history mask (if any) to narrow down to "allowed history"
+        # Handle list input safely
+        if isinstance(C, list):
+             C = np.asarray(C)
+
         if history_mask is not None:
-            pool_C = C[history_mask]
+            if isinstance(C, (pd.DataFrame, pd.Series)):
+                 pool_C_raw = C.iloc[history_mask]
+            else:
+                 pool_C_raw = C[history_mask]
         else:
-            pool_C = C # Use the entire history as the "Climate"
+            pool_C_raw = C
+
+        # 2. Convert to numpy (handling reordering if DF)
+        # DEFENSIBILITY: Robustly handle DataFrame columns to prevent misalignment.
+        if isinstance(pool_C_raw, pd.DataFrame):
+             expected_names = getattr(self, "feature_names", None) or \
+                              getattr(self, "regressor_names", None) or \
+                              getattr(self, "exog_names", None)
+             if expected_names:
+                  missing = [c for c in expected_names if c not in pool_C_raw.columns]
+                  if missing:
+                       raise ValueError(f"Covariate pool missing columns: {missing}")
+                  pool_C_raw = pool_C_raw[expected_names]
+
+        pool_C = np.asarray(pool_C_raw)
+        if pool_C.ndim == 1: pool_C = pool_C.reshape(-1, 1)
+
+        # 3. Drop NaNs
+        # DEFENSIBILITY: Remove NaNs from the pool.
+        # Including NaNs in the historical pool causes crashes (RF) or garbage results.
+        mask_valid = ~np.isnan(pool_C).any(axis=1)
+        if not np.all(mask_valid):
+             n_dropped = np.sum(~mask_valid)
+             warnings.warn(f"Covariate pool contains {n_dropped} rows with NaN. Dropping them for integration safety.", UserWarning)
+             pool_C = pool_C[mask_valid]
+
+        if len(pool_C) == 0:
+             raise ValueError("Covariate pool is empty (after masking and NaN dropping). Cannot proceed with integration.")
 
         # Optimization: We don't need to replay 10,000 days. 200 is usually enough.
         # Randomly pick 200 days from history to represent the "Climate".
