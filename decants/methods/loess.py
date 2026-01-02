@@ -79,7 +79,10 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
 
         # Add small buffer to grid to cover edges
         t_pad = (t_max - t_min) * 0.05
+        if t_pad == 0: t_pad = 1.0 # Handle single time point
+
         c_pad = (c_max - c_min) * 0.05
+        if c_pad == 0: c_pad = 1.0 # Handle constant covariate
 
         t_grid = np.linspace(t_min - t_pad, t_max + t_pad, self.grid_res)
         c_grid = np.linspace(c_min - c_pad, c_max + c_pad, self.grid_res)
@@ -124,12 +127,18 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
                     prediction = reg.predict(query_point)[0]
                     grid_preds[i, j] = prediction
                 except Exception:
-                    # Fallback if fit fails: Use mean of local neighborhood
-                    # Using 0.0 is dangerous as it can introduce massive artifacts.
+                    # Fallback if fit fails (e.g. singular matrix): Use Weighted Mean of local neighborhood.
+                    # This preserves surface continuity better than global mean or zero.
                     if len(y_local) > 0:
-                         grid_preds[i, j] = np.average(y_local, weights=weights)
+                         # Normalize weights for average
+                         w_sum = np.sum(weights)
+                         if w_sum > 0:
+                            grid_preds[i, j] = np.average(y_local, weights=weights)
+                         else:
+                            grid_preds[i, j] = np.mean(y_local)
                     else:
-                         grid_preds[i, j] = np.mean(self.y_train) # Last resort fallback
+                         # Should not happen if n_neighbors > 0, but as last resort
+                         grid_preds[i, j] = np.mean(self.y_train)
 
         # 4. Create Interpolator
         # We use nearest extrapolation to avoid crashing at edges if we are slightly outside grid,

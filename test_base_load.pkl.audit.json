@@ -1,14 +1,15 @@
 {
-  "created_at": "2026-01-02T08:28:25.587872",
+  "created_at": "2026-01-02T08:35:31.045227",
   "library_versions": {
     "python": "3.12.12 (main, Nov  7 2025, 00:07:10) [GCC 13.3.0]",
     "platform": "Linux-6.8.0-x86_64-with-glibc2.39",
     "pandas": "2.3.3",
-    "numpy": "2.4.0"
+    "numpy": "2.4.0",
+    "decants": "unknown"
   },
   "history": [
     {
-      "timestamp": "2026-01-02T08:28:25.587890",
+      "timestamp": "2026-01-02T08:35:31.045244",
       "type": "init",
       "details": {
         "n_splines": 5,
@@ -17,7 +18,7 @@
       }
     },
     {
-      "timestamp": "2026-01-02T08:28:25.588593",
+      "timestamp": "2026-01-02T08:35:31.045878",
       "type": "fit_start",
       "details": {
         "y_hash": "2cfc2d56093f02489d60a3f9920f291754ea9dc585af94b4ae0efeadf21c74db",
@@ -26,7 +27,7 @@
       }
     },
     {
-      "timestamp": "2026-01-02T08:28:25.602524",
+      "timestamp": "2026-01-02T08:35:31.059327",
       "type": "optimization",
       "details": {
         "method": "fit",

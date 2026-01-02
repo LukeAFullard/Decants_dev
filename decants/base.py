@@ -10,6 +10,11 @@ import sys
 import datetime
 import platform
 
+try:
+    from decants import __version__ as decants_version
+except ImportError:
+    decants_version = "unknown"
+
 class BaseDecanter(ABC):
     """
     Abstract Base Class for all Decanter methods.
@@ -23,11 +28,13 @@ class BaseDecanter(ABC):
                 "python": sys.version,
                 "platform": platform.platform(),
                 "pandas": pd.__version__,
-                "numpy": np.__version__
+                "numpy": np.__version__,
+                "decants": decants_version
             },
             "history": [],
             "interpretations": []
         }
+        self.verify_integrity = False
         # We capture init params in subclasses, or generally?
         # Ideally subclasses call super().__init__() but they often don't if they are dataclasses or simple.
         # We will log the *current* state at save time, but history is important.
@@ -70,10 +77,16 @@ class BaseDecanter(ABC):
         """
         Validate alignment of y and X and return common index.
         Raises ValueError if intersection is empty.
+        Enforces sorting if self.verify_integrity is True.
         """
         common_idx = y.index.intersection(X.index)
         if len(common_idx) == 0:
             raise ValueError("Intersection of y and X indices is empty. Cannot fit or transform.")
+
+        if self.verify_integrity:
+            if not common_idx.is_monotonic_increasing:
+                 raise ValueError("Data index is not sorted (monotonic increasing), which violates defensibility requirements when verify_integrity=True. Please sort your data.")
+
         return common_idx
 
     def get_model_params(self) -> Dict[str, Any]:
