@@ -22,6 +22,14 @@ class TimeSeriesSplitter(BaseSplitter):
         self.min_train_size = min_train_size
 
     def split(self, X: Union[pd.DataFrame, np.ndarray], y: Optional[Union[pd.Series, np.ndarray]] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
+        # Enforce or check sorting
+        if isinstance(X, (pd.DataFrame, pd.Series)):
+             if not X.index.is_monotonic_increasing:
+                  # Warning for now, or error? Strict defensibility suggests warning the user.
+                  # But typically TimeSeriesSplit assumes implicit order.
+                  import warnings
+                  warnings.warn("TimeSeriesSplitter input index is not monotonic increasing. Ensure data is sorted by time!", UserWarning)
+
         n_samples = len(X)
         if n_samples < self.min_train_size + self.n_splits:
             raise ValueError(f"Not enough data for TimeSeriesSplitter. Need at least {self.min_train_size + self.n_splits} samples.")

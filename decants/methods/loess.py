@@ -10,6 +10,7 @@ from scipy.interpolate import RegularGridInterpolator
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
 from decants.integration import MarginalizationMixin
+from decants.utils.time import prepare_time_feature
 
 class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
     """
@@ -29,30 +30,6 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         self.interpolator = None
         self.baseline_c = 0.0 # Effect is relative to this baseline
         self._t_start = None
-
-    def _prepare_time(self, index: pd.Index) -> np.ndarray:
-        """Converts index to numeric representation."""
-        # Check for Datetime (pandas standard or object-dtype containing dates)
-        is_dt = pd.api.types.is_datetime64_any_dtype(index)
-
-        # If object type, sample check for date objects
-        if not is_dt and index.dtype == 'object' and len(index) > 0:
-            if isinstance(index[0], (datetime.date, datetime.datetime, pd.Timestamp)):
-                try:
-                    index = pd.to_datetime(index)
-                    is_dt = True
-                except:
-                    pass
-
-        if is_dt:
-            if self._t_start is None:
-                self._t_start = index.min()
-
-            ref_time = self._t_start
-            # Convert to days since reference
-            return (index - ref_time).total_seconds().to_numpy() / (24 * 3600)
-        else:
-            return index.to_numpy(dtype=float)
 
     def _tricube_weights(self, distances: np.ndarray) -> np.ndarray:
         """Standard LOESS weighting function: (1 - u^3)^3"""
@@ -74,16 +51,7 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
 
         self._log_event("fit_start", {"n_samples": len(y_aligned)})
 
-        # Determine start time if datetime
-        is_dt = pd.api.types.is_datetime64_any_dtype(common_idx)
-        if not is_dt and common_idx.dtype == 'object' and len(common_idx) > 0:
-            if isinstance(common_idx[0], (datetime.date, datetime.datetime, pd.Timestamp)):
-                is_dt = True
-
-        if is_dt:
-            self._t_start = pd.to_datetime(common_idx).min()
-
-        t = self._prepare_time(common_idx)
+        t, self._t_start = prepare_time_feature(common_idx, self._t_start)
 
         if isinstance(X_aligned, pd.Series):
             X_aligned = X_aligned.to_frame()
@@ -193,7 +161,7 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         if isinstance(X_aligned, pd.Series):
             X_aligned = X_aligned.to_frame()
 
-        t = self._prepare_time(common_idx)
+        t, _ = prepare_time_feature(common_idx, self._t_start)
         C = X_aligned.values
 
         # 1 covariate restriction
@@ -264,7 +232,7 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         # Ensure Time is numeric relative to t_start
         if isinstance(X_t[0], (pd.Timestamp, np.datetime64, datetime.datetime, datetime.date)):
              idx = pd.Index(X_t)
-             numeric_t = self._prepare_time(idx)
+             numeric_t, _ = prepare_time_feature(idx, self._t_start)
         else:
              numeric_t = X_t.astype(float) # Ensure float
 
