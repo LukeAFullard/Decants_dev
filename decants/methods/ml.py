@@ -112,13 +112,9 @@ class MLDecanter(BaseDecanter, MarginalizationMixin):
         X_c = X[:, 1:]
 
         # Ensure numeric type (handle case where X was object due to Time column)
-        # We try to cast to float.
-        try:
-            X_c = X_c.astype(float)
-        except ValueError:
-            # If casting fails, it might contain non-numeric data that the model can't handle anyway,
-            # but we assume the user provided valid numeric covariates.
-            pass
+        # We explicitly cast to float. If this fails, we let the ValueError propagate
+        # to ensure strict type safety (Defensibility Recommendation #1).
+        X_c = X_c.astype(float)
 
         return self.model.predict(X_c)
 

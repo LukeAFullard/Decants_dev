@@ -118,6 +118,14 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
         y_aligned = y.loc[common_idx]
         X_aligned = X.loc[common_idx]
 
+        # Defensibility Check: Interpolation Mode Warning
+        is_interpolation = self.allow_future or (isinstance(self.splitter_arg, str) and self.splitter_arg in ["loo", "kfold"])
+        if is_interpolation:
+             self._log_event("warning", {
+                 "code": "LEAKAGE_RISK",
+                 "message": "WARNING: Future Leakage Enabled (Interpolation Mode). Results Valid for Association/Smoothing, Not Strict Causality."
+             })
+
         # STRICT DEFENSIBILITY: Enforce Sorting
         # DoubleML with TimeSeriesSplit requires strict temporal ordering.
         # If the input was shuffled, we must sort it to avoid leakage.
@@ -260,9 +268,7 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
 
         X_c = X[:, 1:]
 
-        try:
-            X_c = X_c.astype(float)
-        except ValueError:
-            pass
+        # Defensibility: Strict casting
+        X_c = X_c.astype(float)
 
         return self.model.predict(X_c)

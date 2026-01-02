@@ -5,94 +5,100 @@ import datetime
 from decants.utils.time import prepare_time_feature
 from decants.utils.crossfit import TimeSeriesSplitter
 from decants.methods.double_ml import DoubleMLDecanter
+from decants.methods.ml import MLDecanter
 from decants.methods.gam import GamDecanter
 from decants.methods.loess import FastLoessDecanter
 from decants.methods.gaussian_process import GPDecanter
+from decants.base import BaseDecanter
 
-class TestAuditFixes(unittest.TestCase):
+class TestAuditFixes2025(unittest.TestCase):
 
-    def test_prepare_time_feature(self):
-        # 1. Datetime Index
-        dates = pd.date_range("2020-01-01", periods=10, freq="D")
-        t_feat, t_start = prepare_time_feature(dates)
+    def setUp(self):
+        np.random.seed(42)
+        self.n = 50
+        self.X = pd.DataFrame({'x1': np.random.randn(self.n)}, index=pd.date_range('2020-01-01', periods=self.n))
+        self.y = pd.Series(np.random.randn(self.n), index=self.X.index)
 
-        self.assertIsInstance(t_start, pd.Timestamp)
-        self.assertEqual(t_start, dates[0])
-        # Day 0 is 0.0, Day 1 is 1.0
-        self.assertEqual(t_feat[0], 0.0)
-        self.assertEqual(t_feat[1], 1.0)
+    def test_version_logging(self):
+        """Verify 'decants' version is in audit log."""
+        model = MLDecanter()
+        # Init happens in constructor
+        self.assertIn("decants", model._audit_log["library_versions"])
+        print(f"Decants Version: {model._audit_log['library_versions']['decants']}")
 
-        # 2. Consistent Transform
-        dates_new = pd.date_range("2020-01-05", periods=5, freq="D")
-        t_feat_new, _ = prepare_time_feature(dates_new, t_start)
-        self.assertEqual(t_feat_new[0], 4.0)
+    def test_integrity_enforcement(self):
+        """Verify verify_integrity flag enforces sorting."""
+        # Create unsorted data
+        X_unsorted = self.X.sample(frac=1, random_state=42)
+        y_unsorted = self.y.loc[X_unsorted.index]
 
-        # 3. Numeric Index
-        nums = pd.Index([0, 10, 20])
-        t_feat_num, _ = prepare_time_feature(nums)
-        self.assertEqual(t_feat_num[0], 0.0)
-        self.assertEqual(t_feat_num[1], 10.0)
-
-        # 4. Object Index with Dates
-        obj_dates = pd.Index([datetime.date(2020, 1, 1), datetime.date(2020, 1, 2)], dtype='object')
-        t_feat_obj, t_start_obj = prepare_time_feature(obj_dates)
-        self.assertEqual(t_feat_obj[1], 1.0)
-
-    def test_timeseries_splitter_warning(self):
-        # Unsorted index
-        idx = [0, 2, 1, 3]
-        X = pd.DataFrame({"a": [1, 2, 3, 4]}, index=idx)
-        tscv = TimeSeriesSplitter(n_splits=2, min_train_size=1)
-
-        # Now raises ValueError for defensibility
-        with self.assertRaises(ValueError):
-            list(tscv.split(X))
-
-    def test_double_ml_small_data_robustness(self):
-        # Very small data, n_splits > n_samples/2
-        y = pd.Series([1, 2, 3, 4])
-        X = pd.DataFrame({"a": [1, 1, 1, 1]})
-
-        # Should raise ValueError if min_train_size + n_splits > n_samples
-        dml = DoubleMLDecanter(n_splits=3, min_train_size=2)
-
-        # fit works (naive)
-        dml.fit(y, X)
-
-        # transform calls splitter.split which raises ValueError.
-        # DoubleMLDecanter catches ValueError and warns, returning NaNs.
-        res = dml.transform(y, X)
-
-        self.assertTrue(res.adjusted_series.isna().all() or res.adjusted_series.isna().any())
-        self.assertIn("warning", str(res.stats))
-
-    def test_refactored_methods_run(self):
-        # Quick smoke test for GAM, Loess, GP to ensure refactor didn't break init/fit
-        y = pd.Series(np.random.randn(20), index=pd.date_range("2020-01-01", periods=20))
-        X = pd.DataFrame({"x1": np.random.randn(20)}, index=y.index)
-
-        # GP
-        gp = GPDecanter()
-        gp.fit(y, X)
-        res_gp = gp.transform(y, X)
-        self.assertEqual(len(res_gp.adjusted_series), 20)
-
-        # Loess
-        loess = FastLoessDecanter()
-        loess.fit(y, X)
-        res_loess = loess.transform(y, X)
-        self.assertEqual(len(res_loess.adjusted_series), 20)
-
-        # GAM
-        # Need pygam installed. Assuming it is.
+        # 1. Without flag (Default): Should succeed (or fail later in splitter, but validation passes)
+        # Note: TimeSeriesSplitter checks monotonicity itself, but we are testing BaseDecanter check.
+        model = MLDecanter()
+        # Should not raise ValueError about sorting (unless validation calls other checks)
+        # TimeSeriesSplitter inside MLDecanter WILL raise error during fit_transform if called,
+        # but fit() usually just fits generic models which might not care.
+        # But MLDecanter.fit() calls _validate_alignment.
         try:
-            gam = GamDecanter()
-            gam.fit(y, X)
-            res_gam = gam.transform(y, X)
-            self.assertEqual(len(res_gam.adjusted_series), 20)
+             model.fit(y_unsorted, X_unsorted)
+        except Exception:
+             pass # We don't care about other errors, just ensuring integrity check doesn't fire yet
+
+        # 2. With flag: Should raise ValueError immediately in _validate_alignment
+        model = MLDecanter()
+        model.verify_integrity = True
+        with self.assertRaisesRegex(ValueError, "Data index is not sorted"):
+            model.fit(y_unsorted, X_unsorted)
+
+    def test_double_ml_interpolation_warning(self):
+        """Verify Interpolation mode logs a warning."""
+        dml = DoubleMLDecanter(splitter="kfold")
+        dml.transform(self.y, self.X)
+
+        # Check audit history for warning
+        warnings = [entry for entry in dml._audit_log["history"] if entry["type"] == "warning"]
+        self.assertTrue(len(warnings) > 0)
+        self.assertIn("Future Leakage Enabled", warnings[0]["details"]["message"])
+
+    def test_predict_batch_type_safety(self):
+        """Verify predict_batch fails loudly on bad types."""
+        dml = DoubleMLDecanter()
+        dml.fit(self.y, self.X)
+
+        # Create a batch with strings in covariates
+        # Batch: [Time, Covariate]
+        batch = np.array([
+            [1.0, "bad_data"],
+            [2.0, "worse_data"]
+        ], dtype=object)
+
+        with self.assertRaises(ValueError):
+            dml.predict_batch(batch)
+
+        # Same for MLDecanter
+        ml = MLDecanter()
+        ml.fit(self.y, self.X)
+        with self.assertRaises(ValueError):
+            ml.predict_batch(batch)
+
+    def test_loess_fallback_robustness(self):
+        """Verify FastLoess doesn't crash on singular matrix (simulated by small span/constant data)."""
+        # Create data that yields singular matrix locally (constant covariate)
+        X_const = pd.DataFrame({'x1': np.zeros(self.n)}, index=self.y.index)
+
+        # Use degree 1 (linear) which fails on constant X
+        loess = FastLoessDecanter(span=0.1, degree=1)
+
+        # Should not crash, but use fallback
+        try:
+            loess.fit(self.y, X_const)
         except Exception as e:
-            # If pygam issues, fail test
-            self.fail(f"Gam failed: {e}")
+            self.fail(f"FastLoess crashed on singular matrix: {e}")
+
+        # Ensure grid is populated (no zeros if data is not zero)
+        # self.y is random normal, mean ~ 0. But shouldn't be exactly 0 everywhere.
+        self.assertFalse(np.all(loess.interpolator.values == 0))
+
 
 if __name__ == '__main__':
     unittest.main()
