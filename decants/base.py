@@ -148,12 +148,19 @@ class BaseDecanter(ABC):
         """
         Load a fitted decanter from a file.
 
+        Security Warning:
+            This method uses `pickle.load` which is not secure against erroneous or maliciously
+            constructed data. Only load files from trusted sources.
+
         Args:
             filepath (str): The path to load the model from.
 
         Returns:
             BaseDecanter: The loaded model instance.
         """
+        # Security Warning for defensibility
+        # We don't raise error, but we document it.
+
         with open(filepath, 'rb') as f:
             obj = pickle.load(f)
 
