@@ -120,6 +120,9 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         n_neighbors = int(self.span * len(self.y_train))
         n_neighbors = max(n_neighbors, self.degree + 2) # Ensure enough points for regression
 
+        if n_neighbors > len(self.y_train):
+             raise ValueError(f"Not enough data for FastLoess with degree={self.degree}. Need at least {n_neighbors} samples, got {len(self.y_train)}.")
+
         nbrs_engine = NearestNeighbors(n_neighbors=n_neighbors).fit(self.X_scaled)
 
         # Changed: Store Predicted Y instead of Effect to enable Integration
