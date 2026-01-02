@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import datetime
-from typing import Optional, Union, Dict, Any, Tuple
+from typing import Optional, Union, Dict, Any
 from sklearn.neighbors import NearestNeighbors
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
@@ -42,6 +42,14 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "FastLoessDecanter":
         """
         Builds the correction surface.
+
+        Args:
+            y (pd.Series): Target time series.
+            X (pd.DataFrame or pd.Series): Covariate(s).
+            **kwargs: Additional arguments (ignored).
+
+        Returns:
+            FastLoessDecanter: Self, with fitted interpolator.
         """
         self._ensure_audit_log()
 
@@ -157,6 +165,13 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
     def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
         """
         Applies the correction surface to the data.
+
+        Args:
+            y (pd.Series): Target time series.
+            X (pd.DataFrame or pd.Series): Covariate(s).
+
+        Returns:
+            DecantResult: Result object containing adjusted series and effect.
         """
         self._ensure_audit_log()
 

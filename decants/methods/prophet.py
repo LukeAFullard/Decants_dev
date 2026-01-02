@@ -193,11 +193,14 @@ class ProphetDecanter(BaseDecanter, MarginalizationMixin):
         # Predict
         forecast = self.model.predict(df_batch)
 
-        # We return the TOTAL prediction (yhat) because MarginalizationMixin
-        # calculates the expectation of Y given C, then (usually) we subtract the baseline.
-        # Wait, MarginalizationMixin calculates E[Y | t, C].
-        # If we return yhat, that is exactly E[Y | t, C].
-        return forecast['yhat'].values
+        # Extract only regressor contributions
+        # The user feedback indicates that returning yhat (trend+seasonality+regressors)
+        # breaks the integration logic if the goal is to isolate the effect.
+        effect = np.zeros(len(df_batch))
+        for name in self.regressor_names:
+            if name in forecast.columns:
+                effect += forecast[name].values
+        return effect
 
     def get_model_params(self) -> Dict[str, Any]:
         """Return fitted Prophet parameters."""
