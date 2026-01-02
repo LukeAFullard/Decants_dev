@@ -9,6 +9,7 @@ import datetime
 
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.utils.time import prepare_time_feature
 
 class GPDecanter(BaseDecanter):
     """
@@ -28,38 +29,6 @@ class GPDecanter(BaseDecanter):
         self.X_scaler = RobustScaler()
         self.alpha_ = None
         self._t_start = None
-
-    def _prepare_time(self, index: pd.Index) -> np.ndarray:
-        """Converts index to numeric representation."""
-        # Check for Datetime (pandas standard or object-dtype containing dates)
-        is_dt = pd.api.types.is_datetime64_any_dtype(index)
-
-        # If object type, sample check for date objects
-        if not is_dt and index.dtype == 'object' and len(index) > 0:
-            if isinstance(index[0], (datetime.date, datetime.datetime, pd.Timestamp)):
-                try:
-                    index = pd.to_datetime(index)
-                    is_dt = True
-                except:
-                    pass
-
-        if is_dt:
-            # For transform, we need to respect the training start time if we want consistency
-            # However, for simple regression on time distance, we just need a consistent reference.
-            # If self._t_start is set (during fit), use it.
-            # But wait, 'fit' sets it. 'transform' uses it.
-            if self._t_start is None:
-                 # Should only happen during fit if called first, or if we are lenient.
-                 # But actually _prepare_time is called in fit first.
-                 pass
-
-            ref_time = self._t_start if self._t_start is not None else index.min()
-
-            # Convert to days since reference
-            return (index - ref_time).total_seconds().to_numpy() / (24 * 3600)
-        else:
-            # Assume numeric
-            return index.to_numpy(dtype=float)
 
     def _build_kernel(self, n_covariates: int):
         """
@@ -95,16 +64,7 @@ class GPDecanter(BaseDecanter):
 
         self._log_event("fit_start", {"n_samples": len(y_aligned)})
 
-        # Check for Datetime (pandas standard or object-dtype containing dates)
-        is_dt = pd.api.types.is_datetime64_any_dtype(common_idx)
-        if not is_dt and common_idx.dtype == 'object' and len(common_idx) > 0:
-            if isinstance(common_idx[0], (datetime.date, datetime.datetime, pd.Timestamp)):
-                is_dt = True
-
-        if is_dt:
-            self._t_start = pd.to_datetime(common_idx).min()
-
-        t = self._prepare_time(common_idx)
+        t, self._t_start = prepare_time_feature(common_idx, self._t_start)
 
         # Ensure X is 2D
         if isinstance(X_aligned, pd.Series):
@@ -157,7 +117,7 @@ class GPDecanter(BaseDecanter):
         if isinstance(X_aligned, pd.Series):
             X_aligned = X_aligned.to_frame()
 
-        t = self._prepare_time(common_idx)
+        t, _ = prepare_time_feature(common_idx, self._t_start)
         C = X_aligned.values
 
         # Prep inputs

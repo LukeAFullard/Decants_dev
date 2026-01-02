@@ -4,6 +4,7 @@ import time
 from typing import List, Dict, Union, Type, Any
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.utils.diagnostics import variance_reduction
 
 class DecantBenchmarker:
     """
@@ -68,9 +69,7 @@ class DecantBenchmarker:
                     # Calculate if not present (should be in stats usually for DoubleML, but we can calc manually for others)
                     # Use diagnostics utils if needed, or simple calc
                     try:
-                        var_orig = result.original_series.var()
-                        var_adj = result.adjusted_series.var()
-                        row["Variance Reduction"] = 1 - (var_adj / var_orig)
+                        row["Variance Reduction"] = variance_reduction(result.original_series, result.adjusted_series)
                     except:
                         row["Variance Reduction"] = np.nan
 

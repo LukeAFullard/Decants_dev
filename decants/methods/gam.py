@@ -5,6 +5,7 @@ from typing import Union, Optional, List, Dict, Any
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
 from decants.integration import MarginalizationMixin
+from decants.utils.time import prepare_time_feature
 import warnings
 import datetime
 
@@ -36,32 +37,6 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
             "trend_term": trend_term
         })
 
-    def _prepare_time(self, index: pd.Index) -> np.ndarray:
-        """Converts index to numeric representation (days since start)."""
-        # Check for Datetime (pandas standard or object-dtype containing dates)
-        is_dt = pd.api.types.is_datetime64_any_dtype(index)
-
-        # If object type, sample check for date objects
-        if not is_dt and index.dtype == 'object' and len(index) > 0:
-            if isinstance(index[0], (datetime.date, datetime.datetime, pd.Timestamp)):
-                try:
-                    index = pd.to_datetime(index)
-                    is_dt = True
-                except:
-                    pass
-
-        if is_dt:
-            if self._t_start is None:
-                self._t_start = index.min()
-
-            ref_time = self._t_start
-            # Convert to days since reference
-            # Using seconds / (24*3600) gives fractional days
-            return (index - ref_time).total_seconds().to_numpy() / (24 * 3600)
-        else:
-            # Assume numeric. If integer index 0..N, this preserves it.
-            return index.to_numpy(dtype=float)
-
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "GamDecanter":
         """
         Fit the GAM model.
@@ -84,8 +59,7 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         X = X.loc[common_idx]
 
         # Initialize start time if needed
-        # We call _prepare_time which handles setting _t_start if needed
-        time_feature = self._prepare_time(common_idx)
+        time_feature, self._t_start = prepare_time_feature(common_idx, self._t_start)
 
         # Construct Feature Matrix
         X_matrix = np.column_stack([time_feature, X.values])
@@ -142,8 +116,8 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         X = X.loc[common_idx]
 
         # Use consistent time feature
-        # If transforming new data, _prepare_time uses self._t_start from fit
-        time_feature = self._prepare_time(common_idx)
+        # If transforming new data, uses self._t_start from fit
+        time_feature, _ = prepare_time_feature(common_idx, self._t_start)
 
         X_matrix = np.column_stack([time_feature, X.values])
 
@@ -207,7 +181,7 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         # If the input was constructed with timestamps, X_t elements are Timestamps
         if isinstance(X_t[0], (pd.Timestamp, np.datetime64, datetime.datetime, datetime.date)):
              idx = pd.Index(X_t)
-             numeric_t = self._prepare_time(idx)
+             numeric_t, _ = prepare_time_feature(idx, self._t_start)
         else:
              numeric_t = X_t.astype(float)
 

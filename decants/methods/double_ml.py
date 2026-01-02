@@ -162,7 +162,13 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
             # Keeping print as per original code, but adding check.
             msg = f"Warning: DML Split failed: {e}. Returning NaNs."
             print(msg)
+            # Add warning to stats so it's visible in the result object
+            # (which is what the test checks and what a user would inspect programmatically)
             self._log_event("warning", {"message": msg})
+
+            # Use a mutable stats dict if possible or just append to the final stats
+            # But here we build stats later. We'll store the error to include it.
+            self._split_error = str(e)
 
         # If strict time series, early values remain NaN.
         # If LOO, all should be filled.
@@ -179,6 +185,10 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
             "n_splits": self.n_splits,
             "mode": "interpolation" if self.allow_future or self.splitter_arg in ["loo", "kfold"] else "timeseries"
         }
+
+        if hasattr(self, '_split_error'):
+             stats['warning'] = f"Split failed: {self._split_error}"
+             del self._split_error
 
         # Reindex to original input shape (propagating NaNs where we didn't have data/predictions)
         final_adjusted = adjusted.reindex(y_orig.index)
@@ -210,6 +220,20 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
              params["naive_model_intercept"] = self.model.intercept_
 
         return params
+
+    def predict(self, X: Union[pd.DataFrame, pd.Series]) -> pd.Series:
+        """
+        Use the naive trained model to predict y from X.
+        Note: This does not use cross-fitting/double-ml debiasing,
+        it uses the standard model trained in fit().
+        """
+        if self.model is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        if isinstance(X, pd.Series):
+             X = X.to_frame()
+
+        return pd.Series(self.model.predict(X), index=X.index)
 
     def predict_batch(self, X: np.ndarray) -> np.ndarray:
         """
