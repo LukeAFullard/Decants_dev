@@ -6,6 +6,7 @@ from decants.base import BaseDecanter
 from decants.objects import DecantResult
 from decants.integration import MarginalizationMixin
 import warnings
+import datetime
 
 class GamDecanter(BaseDecanter, MarginalizationMixin):
     """
@@ -26,6 +27,7 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         self.trend_term = trend_term
         self.model = None
         self.feature_names = []
+        self._t_start = None
 
         # Log init params
         self._log_event("init", {
@@ -33,6 +35,20 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
             "lam": str(lam) if isinstance(lam, list) else lam, # lists might be numpy arrays
             "trend_term": trend_term
         })
+
+    def _prepare_time(self, index: pd.Index) -> np.ndarray:
+        """Converts index to numeric representation (days since start)."""
+        if pd.api.types.is_datetime64_any_dtype(index):
+            if self._t_start is None:
+                self._t_start = index.min()
+
+            ref_time = self._t_start
+            # Convert to days since reference
+            # Using seconds / (24*3600) gives fractional days
+            return (index - ref_time).total_seconds().to_numpy() / (24 * 3600)
+        else:
+            # Assume numeric. If integer index 0..N, this preserves it.
+            return index.to_numpy(dtype=float)
 
     def fit(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> "GamDecanter":
         """
@@ -55,11 +71,15 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
-        # Create Time Index (0 to N-1)
-        time_idx = np.arange(len(y))
+        # Initialize start time if needed
+        if pd.api.types.is_datetime64_any_dtype(common_idx):
+             self._t_start = common_idx.min()
+
+        # Create Time Feature
+        time_feature = self._prepare_time(common_idx)
 
         # Construct Feature Matrix
-        X_matrix = np.column_stack([time_idx, X.values])
+        X_matrix = np.column_stack([time_feature, X.values])
 
         self.feature_names = ['time_trend'] + list(X.columns)
 
@@ -112,15 +132,11 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         y = y.loc[common_idx]
         X = X.loc[common_idx]
 
-        # Warn about time index reset
-        warnings.warn("GamDecanter.transform resets time index to 0..N. "
-                      "If transforming new/future data, the trend component (term 0) "
-                      "may be incorrect relative to training period. "
-                      "Ensure data provided is consistent or continuous with training if trend matters.",
-                      UserWarning)
+        # Use consistent time feature
+        # If transforming new data, _prepare_time uses self._t_start from fit
+        time_feature = self._prepare_time(common_idx)
 
-        time_idx = np.arange(len(y))
-        X_matrix = np.column_stack([time_idx, X.values])
+        X_matrix = np.column_stack([time_feature, X.values])
 
         covariate_effect = np.zeros(len(y))
         effect_lower = np.zeros(len(y))
@@ -160,6 +176,36 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
             conf_int=conf_int_df,
             stats=stats
         )
+
+    def predict_batch(self, X):
+        """
+        Helper for MarginalizationMixin.
+        Correctly formats [t, C] batch (handling objects/timestamps) for pygam.
+        """
+        if self.model is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        # X is passed from mixin as np.array (possibly object if datetime)
+        # X[:, 0] is t, X[:, 1:] is C.
+
+        X_t = X[:, 0]
+        X_c = X[:, 1:]
+
+        # Ensure Time is numeric relative to t_start
+        # If the input was constructed with timestamps, X_t elements are Timestamps
+        if isinstance(X_t[0], (pd.Timestamp, np.datetime64, datetime.datetime, datetime.date)):
+             idx = pd.Index(X_t)
+             numeric_t = self._prepare_time(idx)
+        else:
+             numeric_t = X_t.astype(float)
+
+        # Explicitly cast covariates to float
+        numeric_c = X_c.astype(float)
+
+        # Re-stack
+        X_final = np.column_stack([numeric_t, numeric_c])
+
+        return self.model.predict(X_final)
 
     def get_model_params(self) -> Dict[str, Any]:
         """Return fitted GAM parameters."""

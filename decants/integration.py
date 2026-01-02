@@ -53,11 +53,15 @@ class MarginalizationMixin:
 
         n_history_samples = len(active_pool)
 
-        # Ensure t is iterable
-        if np.isscalar(t):
-            t = np.array([t])
+        # Ensure t is iterable and has length
+        # Handle pandas Timestamp specifically as it behaves like a scalar but sometimes wraps oddly
+        if isinstance(t, (pd.Timestamp, datetime.datetime, datetime.date)) or np.isscalar(t):
+             t = np.array([t])
         else:
             t = np.asarray(t)
+            # Check for 0-d array (scalar wrapped in array)
+            if t.ndim == 0:
+                t = t.reshape(1)
 
         n_targets = len(t)
         y_integrated = np.zeros(n_targets)
