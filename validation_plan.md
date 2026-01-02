@@ -26,12 +26,13 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
     *   **Success Criteria:** Non-parametric methods (GAM, GP, FastLoess) must recover the shape of $f(C_t)$. Linear methods (ARIMA, DML-Linear) should fail or warn.
     *   *Status:* **PASS** (FastLoess), **FAIL/Caveat** (GAM, GP need tuning), **FAIL** (Linear methods as expected).
 
-3.  [ ] **Scenario A3: Trend-Covariate Confounding**
+3.  [x] **Scenario A3: Trend-Covariate Confounding**
     *   **Input:** Both Trend and Covariate grow linearly ($Trend_t = t$, $C_t = t$).
     *   **Success Criteria:** The model should either:
         *   Attribute effect to Trend (conservative for intervention detection).
         *   Or attribute to Covariate based on user specification.
         *   **Crucially:** It must not double-count (explode coefficients).
+    *   *Status:* **PASS**. No explosion observed. Prophet attributes to Trend (Conservative), DoubleML/ARIMA attribute to Covariate (Greedy).
 
 ### Protocol B: The "Null" Test (Placebo/False Positive Control)
 *Objective: Prove the model does not "hallucinate" effects.*
