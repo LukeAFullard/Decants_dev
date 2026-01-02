@@ -37,11 +37,12 @@ class GPDecanter(BaseDecanter):
         """
         # 1. Time Trend Kernel (Matern 3/2 for flexibility)
         # Length scale bounds allow it to find long-term trends
-        k_time = ConstantKernel() * Matern(length_scale=1.0, length_scale_bounds=(1e-1, 1e4), nu=self.kernel_nu)
+        # We increase constant_value_bounds to allow for high variance if data is not perfectly scaled
+        k_time = ConstantKernel(constant_value_bounds=(1e-5, 1e6)) * Matern(length_scale=1.0, length_scale_bounds=(1e-1, 1e4), nu=self.kernel_nu)
 
         # 2. Covariate Kernel (One shared kernel for simplicity, or separate if dims are high)
         # We assume covariates interact smoothly.
-        k_cov = ConstantKernel() * Matern(length_scale=np.ones(n_covariates), length_scale_bounds=(1e-1, 1e4), nu=self.kernel_nu)
+        k_cov = ConstantKernel(constant_value_bounds=(1e-5, 1e6)) * Matern(length_scale=np.ones(n_covariates), length_scale_bounds=(1e-1, 1e4), nu=self.kernel_nu)
 
         # 3. Noise Kernel (Handles measurement error)
         k_noise = WhiteKernel(noise_level=1.0, noise_level_bounds=(1e-5, 1e1))
