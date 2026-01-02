@@ -159,6 +159,45 @@ class ProphetDecanter(BaseDecanter, MarginalizationMixin):
             stats=stats
         )
 
+    def predict_batch(self, X: np.ndarray) -> np.ndarray:
+        """
+        Helper for MarginalizationMixin.
+        Converts the [t, C] numpy array batch into a Prophet-compatible DataFrame.
+
+        Args:
+            X (np.ndarray): Input batch of shape [n_samples, 1 + n_features].
+                            Column 0 is Time ('ds').
+                            Columns 1: are Covariates (in order of self.regressor_names).
+        """
+        if self.model is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        # X[:, 0] is t, X[:, 1:] is C.
+        X_t = X[:, 0]
+        X_c = X[:, 1:]
+
+        # Prophet expects a DataFrame with 'ds' and regressor columns
+        data = {'ds': X_t}
+
+        # Add regressors
+        # We assume X_c columns correspond exactly to self.regressor_names in order
+        if X_c.shape[1] != len(self.regressor_names):
+             raise ValueError(f"Batch covariate dimension {X_c.shape[1]} does not match model regressors {len(self.regressor_names)}")
+
+        for i, name in enumerate(self.regressor_names):
+            data[name] = X_c[:, i]
+
+        df_batch = pd.DataFrame(data)
+
+        # Predict
+        forecast = self.model.predict(df_batch)
+
+        # We return the TOTAL prediction (yhat) because MarginalizationMixin
+        # calculates the expectation of Y given C, then (usually) we subtract the baseline.
+        # Wait, MarginalizationMixin calculates E[Y | t, C].
+        # If we return yhat, that is exactly E[Y | t, C].
+        return forecast['yhat'].values
+
     def get_model_params(self) -> Dict[str, Any]:
         """Return fitted Prophet parameters."""
         if self.model is None:
