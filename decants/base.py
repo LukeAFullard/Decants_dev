@@ -87,6 +87,19 @@ class BaseDecanter(ABC):
             if not common_idx.is_monotonic_increasing:
                  raise ValueError("Data index is not sorted (monotonic increasing), which violates defensibility requirements when verify_integrity=True. Please sort your data.")
 
+            # DEFENSIBILITY: Check for Time Index
+            # While numeric indices are allowed, mixing them with time-series assumptions can be dangerous.
+            # We warn if index is not datetime-like when verify_integrity is on.
+            if not pd.api.types.is_datetime64_any_dtype(common_idx):
+                # We don't raise error (users might use integer time steps), but we log a warning in the audit log if possible.
+                # Since we are inside validation, we just print or warn.
+                import warnings
+                warnings.warn(
+                    "Data index is NOT a datetime index. Verify this is intentional (e.g., using integer time steps). "
+                    "For defensible time-series analysis, a proper DatetimeIndex is recommended.",
+                    UserWarning
+                )
+
         return common_idx
 
     def get_model_params(self) -> Dict[str, Any]:
