@@ -32,7 +32,19 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
 
     def _prepare_time(self, index: pd.Index) -> np.ndarray:
         """Converts index to numeric representation."""
-        if pd.api.types.is_datetime64_any_dtype(index):
+        # Check for Datetime (pandas standard or object-dtype containing dates)
+        is_dt = pd.api.types.is_datetime64_any_dtype(index)
+
+        # If object type, sample check for date objects
+        if not is_dt and index.dtype == 'object' and len(index) > 0:
+            if isinstance(index[0], (datetime.date, datetime.datetime, pd.Timestamp)):
+                try:
+                    index = pd.to_datetime(index)
+                    is_dt = True
+                except:
+                    pass
+
+        if is_dt:
             if self._t_start is None:
                 self._t_start = index.min()
 
@@ -63,8 +75,13 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         self._log_event("fit_start", {"n_samples": len(y_aligned)})
 
         # Determine start time if datetime
-        if pd.api.types.is_datetime64_any_dtype(common_idx):
-             self._t_start = common_idx.min()
+        is_dt = pd.api.types.is_datetime64_any_dtype(common_idx)
+        if not is_dt and common_idx.dtype == 'object' and len(common_idx) > 0:
+            if isinstance(common_idx[0], (datetime.date, datetime.datetime, pd.Timestamp)):
+                is_dt = True
+
+        if is_dt:
+            self._t_start = pd.to_datetime(common_idx).min()
 
         t = self._prepare_time(common_idx)
 

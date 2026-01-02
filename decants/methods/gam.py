@@ -38,7 +38,19 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
 
     def _prepare_time(self, index: pd.Index) -> np.ndarray:
         """Converts index to numeric representation (days since start)."""
-        if pd.api.types.is_datetime64_any_dtype(index):
+        # Check for Datetime (pandas standard or object-dtype containing dates)
+        is_dt = pd.api.types.is_datetime64_any_dtype(index)
+
+        # If object type, sample check for date objects
+        if not is_dt and index.dtype == 'object' and len(index) > 0:
+            if isinstance(index[0], (datetime.date, datetime.datetime, pd.Timestamp)):
+                try:
+                    index = pd.to_datetime(index)
+                    is_dt = True
+                except:
+                    pass
+
+        if is_dt:
             if self._t_start is None:
                 self._t_start = index.min()
 
@@ -72,10 +84,7 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         X = X.loc[common_idx]
 
         # Initialize start time if needed
-        if pd.api.types.is_datetime64_any_dtype(common_idx):
-             self._t_start = common_idx.min()
-
-        # Create Time Feature
+        # We call _prepare_time which handles setting _t_start if needed
         time_feature = self._prepare_time(common_idx)
 
         # Construct Feature Matrix
@@ -184,6 +193,9 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         """
         if self.model is None:
              raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        if len(X) == 0:
+            return np.array([])
 
         # X is passed from mixin as np.array (possibly object if datetime)
         # X[:, 0] is t, X[:, 1:] is C.

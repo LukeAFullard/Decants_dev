@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from prophet import Prophet
 from typing import Union, Optional, List, Dict, Any
+import warnings
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
 from decants.integration import MarginalizationMixin
@@ -44,6 +45,15 @@ class ProphetDecanter(BaseDecanter, MarginalizationMixin):
         common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
+
+        # Validation for Prophet index requirement
+        if not pd.api.types.is_datetime64_any_dtype(y.index):
+             warnings.warn(
+                 "Prophet requires a Datetime Index. "
+                 "The provided index is not strictly datetime64. "
+                 "This may cause Prophet to crash or behave unexpectedly.",
+                 UserWarning
+             )
 
         # Prepare Data for Prophet
         df = pd.DataFrame({'ds': y.index, 'y': y.values})

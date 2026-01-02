@@ -23,7 +23,8 @@ class DoubleMLDecanter(BaseDecanter):
         splitter: Union[str, Any] = "timeseries",
         n_splits: int = 5,
         min_train_size: int = 20,
-        allow_future: bool = False
+        allow_future: bool = False,
+        random_state: int = 42
     ):
         """
         Args:
@@ -32,6 +33,7 @@ class DoubleMLDecanter(BaseDecanter):
             n_splits: Number of splits for internal splitters.
             min_train_size: Minimum training size for TimeSeriesSplitter.
             allow_future: If True, forces 'interpolation' mode regardless of splitter arg.
+            random_state: Random state for KFold if used.
         """
         super().__init__()
         self.nuisance_model = nuisance_model if nuisance_model is not None else Ridge(alpha=1.0)
@@ -39,6 +41,7 @@ class DoubleMLDecanter(BaseDecanter):
         self.n_splits = n_splits
         self.min_train_size = min_train_size
         self.allow_future = allow_future
+        self.random_state = random_state
         self.model = None # The last fitted model (conceptually DML doesn't have a single model)
 
         self._log_event("init", {
@@ -46,7 +49,8 @@ class DoubleMLDecanter(BaseDecanter):
             "splitter_arg": str(splitter),
             "n_splits": n_splits,
             "min_train_size": min_train_size,
-            "allow_future": allow_future
+            "allow_future": allow_future,
+            "random_state": random_state
         })
 
     def _get_splitter(self):
@@ -54,16 +58,16 @@ class DoubleMLDecanter(BaseDecanter):
             # If allow_future is True, we default to LOO if n_splits is roughly sample size or just KFold
             # Actually user guide said "allow_future" creates "interpolation" mode.
             if self.splitter_arg == "loo":
-                 return InterpolationSplitter(method="loo")
-            return InterpolationSplitter(method="kfold", n_splits=self.n_splits)
+                 return InterpolationSplitter(method="loo", random_state=self.random_state)
+            return InterpolationSplitter(method="kfold", n_splits=self.n_splits, random_state=self.random_state)
 
         if isinstance(self.splitter_arg, str):
             if self.splitter_arg == "timeseries":
                 return TimeSeriesSplitter(n_splits=self.n_splits, min_train_size=self.min_train_size)
             elif self.splitter_arg == "loo":
-                 return InterpolationSplitter(method="loo")
+                 return InterpolationSplitter(method="loo", random_state=self.random_state)
             elif self.splitter_arg == "kfold":
-                 return InterpolationSplitter(method="kfold", n_splits=self.n_splits)
+                 return InterpolationSplitter(method="kfold", n_splits=self.n_splits, random_state=self.random_state)
             else:
                 raise ValueError(f"Unknown splitter: {self.splitter_arg}")
         return self.splitter_arg
