@@ -54,14 +54,15 @@ class InterpolationSplitter(BaseSplitter):
     Wrapper for K-Fold or LOO splitting.
     Allows future data in training (Interpolation).
     """
-    def __init__(self, method: str = "kfold", n_splits: int = 5):
+    def __init__(self, method: str = "kfold", n_splits: int = 5, random_state: int = 42):
         self.method = method
         self.n_splits = n_splits
+        self.random_state = random_state
 
     def split(self, X: Union[pd.DataFrame, np.ndarray], y: Optional[Union[pd.Series, np.ndarray]] = None) -> Iterator[Tuple[np.ndarray, np.ndarray]]:
         if self.method == "loo":
             cv = LeaveOneOut()
         else:
-            cv = KFold(n_splits=self.n_splits, shuffle=True, random_state=42)
+            cv = KFold(n_splits=self.n_splits, shuffle=True, random_state=self.random_state)
 
         return cv.split(X, y)
