@@ -2,76 +2,90 @@
 
 **Date:** February 2025
 **Scope:** Validation of the `decants` library for high-stakes/legal usage.
-**Objective:** Establish a formal protocol to prove that the library produces accurate, defensible, and reproducible covariate adjustments.
+**Objective:** Establish a formal protocol to prove that the library produces accurate, defensible, and reproducible covariate adjustments suitable for regulatory scrutiny.
 
-## 1. Validation Philosophy
-To be admissible in a court of law, the software must demonstrate:
-1.  **Correctness:** It accurately removes covariate effects when they exist.
-2.  **Conservative Behavior:** It does not "hallucinate" effects where none exist (Type I Error control).
-3.  **Traceability:** Every result can be traced back to exact code versions, parameters, and data inputs.
+## 1. Regulatory & Legal Context
+To be suitable for regulatory use (e.g., following principles from **SR 11-7** on Model Risk Management) and defensible in legal challenges, the software must demonstrate:
+1.  **Conceptual Soundness:** The mathematical approach is standard, peer-reviewed, or theoretically justified.
+2.  **Outcome Analysis:** The model performs as expected on known ground-truth data.
+3.  **Ongoing Monitoring:** Stability and robustness are checked under stress.
+4.  **Reproducibility:** A third party must be able to reproduce the exact results given the same inputs and code version.
 
-## 2. Core Validation Protocols
+## 2. Validation Protocols
 
-### Protocol A: Synthetic Ground Truth Recovery
-*Objective: Prove the model can recover a known signal buried in noise.*
+### Protocol A: Synthetic Ground Truth Recovery (Accuracy)
+*Objective: Prove the model can correctly identify and separate signal from noise and confounding variables.*
 
-1.  **Data Generation:**
-    *   Simulate a time series $Y_t = Trend_t + f(C_t) + \epsilon_t$.
-    *   $Trend_t$: Known function (e.g., linear + seasonal).
-    *   $f(C_t)$: Known covariate effect (e.g., $3 \times Temperature$).
-    *   $\epsilon_t$: Gaussian noise.
-2.  **Execution:**
-    *   Run `Decanter.transform(Y, C)`.
-3.  **Success Criteria:**
-    *   The estimated `covariate_effect` must correlate with the true $f(C_t)$ ($R^2 > 0.9$).
-    *   The `adjusted_series` must match the true $Trend_t$ within a defined error margin (RMSE).
+1.  **Scenario A1: Standard Signal Recovery**
+    *   **Input:** $Y_t = Trend_t + \beta \cdot C_t + \epsilon_t$.
+    *   **Success Criteria:** Estimated $\hat{\beta}$ within 5% of true $\beta$; Adjusted series matches $Trend_t$ (High $R^2$).
 
-### Protocol B: The "Null" Test (Placebo Verification)
-*Objective: Prove the model does not fabricate effects.*
+2.  **Scenario A2: Non-Linear Interactions**
+    *   **Input:** $Y_t = Trend_t + \sin(C_t) + C_t^2 + \epsilon_t$.
+    *   **Success Criteria:** Non-parametric methods (GAM, GP, FastLoess) must recover the shape of $f(C_t)$. Linear methods (ARIMA, DML-Linear) should fail or warn.
 
-1.  **Data Generation:**
-    *   $Y_t$: Random Walk or Pure Trend.
-    *   $C_t$: Random noise (uncorrelated with $Y_t$).
-2.  **Execution:**
-    *   Run `Decanter.transform(Y, C)`.
-3.  **Success Criteria:**
-    *   The estimated `covariate_effect` should be statistically indistinguishable from zero.
-    *   `variance_reduction` metric should be negligible or negative.
+3.  **Scenario A3: Trend-Covariate Confounding**
+    *   **Input:** Both Trend and Covariate grow linearly ($Trend_t = t$, $C_t = t$).
+    *   **Success Criteria:** The model should either:
+        *   Attribute effect to Trend (conservative for intervention detection).
+        *   Or attribute to Covariate based on user specification.
+        *   **Crucially:** It must not double-count (explode coefficients).
 
-### Protocol C: Method-Specific Edge Cases
+### Protocol B: The "Null" Test (Placebo/False Positive Control)
+*Objective: Prove the model does not "hallucinate" effects.*
 
-| Method | Scenario | Success Criteria |
-| :--- | :--- | :--- |
-| **DoubleML** | High-dimensional noise (100 useless covariates) | LASSO/Ridge correctly shrinks coefficients to zero. |
-| **FastLoess** | Singular Matrix (Constant Covariate) | Falls back to weighted mean; does not crash. |
-| **GP** | Large gaps in time series | Uncertainty intervals (std) increase in gap regions. |
-| **Prophet** | Missing Dates (NaT) | Gracefully handles gaps or raises descriptive error. |
+1.  **Scenario B1: White Noise**
+    *   **Input:** $Y_t \sim N(0,1)$, $C_t \sim N(0,1)$.
+    *   **Success Criteria:** Estimated effect $\approx 0$. No statistically significant components detected.
 
-## 3. Defensibility & Integrity Validation
+2.  **Scenario B2: Spurious Correlation (Random Walks)**
+    *   **Input:** Two independent random walks ($Y_t = \sum \epsilon$, $C_t = \sum \eta$).
+    *   **Success Criteria:**
+        *   Model should handle non-stationarity (e.g., via differencing or cointegration checks).
+        *   Diagnostics should flag high risk of spurious correlation if unhandled.
 
-### Audit Trail Verification
-*   **Action:** Initialize a model, fit, save, and load.
-*   **Check:** Verify `.audit.json` contains:
-    *   `source_hash`: Matches the SHA-256 of the library source.
-    *   `library_versions`: Matches current environment.
-    *   `history`: Contains timestamped 'fit' and 'transform' events.
+### Protocol C: Stress Testing & Robustness
+*Objective: Ensure stability under extreme conditions.*
 
-### Strict Mode Enforcement
-*   **Action:** Pass unsorted time-series data with `strict=True`.
-*   **Check:** `fit()` must raise `ValueError`. The model refuses to process non-defensible data.
+1.  **Scenario C1: Adversarial Inputs**
+    *   **Input:** Infinite values (`np.inf`), NaNs, massive outliers (100$\sigma$).
+    *   **Success Criteria:** Graceful failure (ValueError) or robust handling (RobustScaler/Trimming). *No silent corruption.*
 
-## 4. Operational Validation Checklist
-For any specific legal case, the following steps must be performed:
+2.  **Scenario C2: Data Sparsity & Gaps**
+    *   **Input:** 50% missing data randomly dispersed; large contiguous gap.
+    *   **Success Criteria:** Uncertainty intervals should widen significantly in gap regions (GP/Prophet).
 
-1.  [ ] **Pre-Run:** Run standard unit tests (`pytest`).
-2.  [ ] **Data Audit:** Verify input data hash matches the chain of custody.
-3.  [ ] **Sensitivity Analysis:** Run the chosen model with slightly perturbed parameters (e.g., changing `span` in Loess by ±10%). Result conclusions must remain stable.
-4.  [ ] **Cross-Method Validation:** Compare results of the primary method (e.g., DoubleML) with a secondary method (e.g., GAM). Divergence requires explanation.
+3.  **Scenario C3: Multi-Collinearity**
+    *   **Input:** $C_1 = X$, $C_2 = X + \epsilon$ (near perfect correlation).
+    *   **Success Criteria:** Estimates should remain stable (e.g., via regularization in DML/Ridge) or solver should warn.
 
-## 5. Automated Validation Suite
-The repository includes an automated test suite (`tests/`) that implements Protocols A, B, and C.
-To execute full validation:
+### Protocol D: Defensibility & Audit
+*Objective: Ensure the analysis is legally admissible.*
 
-```bash
-python -m pytest tests/ --verbose
-```
+1.  **Determinism Check**
+    *   **Action:** Run the full pipeline twice with `random_state=42`.
+    *   **Success Criteria:** Output arrays must be identical bit-for-bit.
+
+2.  **Leakage Verification (Time Travel)**
+    *   **Action:** Check if $Prediction_t$ changes when data at $t+k$ is altered.
+    *   **Success Criteria:** Zero change for strict time-series models.
+
+3.  **Audit Trail Completeness**
+    *   **Action:** Verify `.audit.json` contains:
+        *   Source Code Hash (SHA-256).
+        *   Library Version.
+        *   Input Data Hash (SHA-256 of DataFrame).
+        *   Exact hyperparameter set.
+
+## 3. Reporting Standards
+All validation exercises must result in a **Validation Report** (see `validation_report_template.md`).
+This report serves as the primary artifact for:
+*   Internal Review.
+*   Regulatory Submission.
+*   Legal Discovery.
+
+## 4. Execution Plan
+To execute the full validation suite for a new release:
+1.  Run automated regression tests: `pytest tests/`
+2.  Execute "Deep Validation" script (to be created): `python scripts/validate_release.py`
+3.  Generate Validation Report from template.
