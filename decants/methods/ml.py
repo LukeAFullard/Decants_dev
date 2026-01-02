@@ -6,8 +6,9 @@ from sklearn.model_selection import TimeSeriesSplit, cross_val_predict
 from typing import Union, Optional, List, Dict, Any
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 
-class MLDecanter(BaseDecanter):
+class MLDecanter(BaseDecanter, MarginalizationMixin):
     """
     ML-based Decanter using scikit-learn.
     Uses Time Series Cross-Validation to generate out-of-sample predictions for residualization.
@@ -90,6 +91,36 @@ class MLDecanter(BaseDecanter):
             model=self.model,
             stats=stats
         )
+
+    def predict_batch(self, X: np.ndarray) -> np.ndarray:
+        """
+        Helper for MarginalizationMixin.
+
+        Args:
+            X (np.ndarray): Input batch of shape [n_samples, 1 + n_features].
+                            Column 0 is Time (ignored by MLDecanter),
+                            Columns 1: are Covariates.
+        """
+        if self.model is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        # X is passed from mixin as np.array (possibly object if datetime)
+        # X[:, 0] is t (Time), X[:, 1:] is C (Covariates).
+
+        # MLDecanter (e.g. RandomForest) is trained on Covariates ONLY.
+        # So we strip the time column.
+        X_c = X[:, 1:]
+
+        # Ensure numeric type (handle case where X was object due to Time column)
+        # We try to cast to float.
+        try:
+            X_c = X_c.astype(float)
+        except ValueError:
+            # If casting fails, it might contain non-numeric data that the model can't handle anyway,
+            # but we assume the user provided valid numeric covariates.
+            pass
+
+        return self.model.predict(X_c)
 
     def fit_transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series], **kwargs) -> DecantResult:
         """
