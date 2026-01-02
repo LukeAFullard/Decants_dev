@@ -5,10 +5,11 @@ from sklearn.base import BaseEstimator, clone
 from sklearn.linear_model import Ridge
 from decants.base import BaseDecanter
 from decants.objects import DecantResult
+from decants.integration import MarginalizationMixin
 from decants.utils.crossfit import TimeSeriesSplitter, InterpolationSplitter
 from decants.utils.diagnostics import check_orthogonality, variance_reduction
 
-class DoubleMLDecanter(BaseDecanter):
+class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
     """
     Double Machine Learning (DML) Decanter.
     Performs out-of-sample residualization to remove covariate effects without overfitting.
@@ -209,3 +210,27 @@ class DoubleMLDecanter(BaseDecanter):
              params["naive_model_intercept"] = self.model.intercept_
 
         return params
+
+    def predict_batch(self, X: np.ndarray) -> np.ndarray:
+        """
+        Helper for MarginalizationMixin.
+
+        Args:
+            X (np.ndarray): Input batch of shape [n_samples, 1 + n_features].
+                            Column 0 is Time (ignored by DoubleMLDecanter),
+                            Columns 1: are Covariates.
+        """
+        if self.model is None:
+             raise RuntimeError("Model is not fitted. Call fit() first.")
+
+        # DoubleMLDecanter saves the last fitted naive model on [X -> Y]
+        # We use this for integration/inference on scenarios.
+
+        X_c = X[:, 1:]
+
+        try:
+            X_c = X_c.astype(float)
+        except ValueError:
+            pass
+
+        return self.model.predict(X_c)
