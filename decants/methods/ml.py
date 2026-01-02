@@ -101,6 +101,9 @@ class MLDecanter(BaseDecanter, MarginalizationMixin):
             X (np.ndarray): Input batch of shape [n_samples, 1 + n_features].
                             Column 0 is Time (ignored by MLDecanter),
                             Columns 1: are Covariates.
+
+        Returns:
+            np.ndarray: Predicted values.
         """
         if self.model is None:
              raise RuntimeError("Model is not fitted. Call fit() first.")

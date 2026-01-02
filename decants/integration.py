@@ -55,6 +55,15 @@ class MarginalizationMixin:
                   missing = [c for c in expected_names if c not in pool_C_raw.columns]
                   if missing:
                        raise ValueError(f"Covariate pool missing columns: {missing}")
+
+                  # Validate order and warn if reordering is needed
+                  if list(pool_C_raw.columns) != expected_names:
+                       warnings.warn(
+                           f"Covariate pool columns {list(pool_C_raw.columns)} do not match model features {expected_names}. "
+                           "Reordering columns to match model.",
+                           UserWarning
+                       )
+
                   pool_C_raw = pool_C_raw[expected_names]
 
         pool_C = np.asarray(pool_C_raw)

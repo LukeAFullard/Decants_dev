@@ -80,7 +80,7 @@ class GamDecanter(BaseDecanter, MarginalizationMixin):
         self.model = LinearGAM(terms, lam=self.lam)
 
         # Gridsearch Logic
-        should_gridsearch = kwargs.get('gridsearch', False)
+        should_gridsearch = kwargs.get('gridsearch', True)
 
         if should_gridsearch:
              try:

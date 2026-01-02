@@ -1,4 +1,5 @@
 from typing import Optional, Union, Any, Dict
+import warnings
 import pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, clone
@@ -46,6 +47,7 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
         self.allow_future = allow_future
         self.random_state = random_state
         self.model = None # The last fitted model (conceptually DML doesn't have a single model)
+        self.feature_names = []
 
         self._log_event("init", {
             "nuisance_model": self.nuisance_model.__class__.__name__,
@@ -94,6 +96,8 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
         common_idx = self._validate_alignment(y, X)
         y = y.loc[common_idx]
         X = X.loc[common_idx]
+
+        self.feature_names = list(X.columns)
 
         self.model = clone(self.nuisance_model)
         self.model.fit(X, y)
@@ -178,7 +182,7 @@ class DoubleMLDecanter(BaseDecanter, MarginalizationMixin):
             # Using print is okay for now but maybe logging is better?
             # Keeping print as per original code, but adding check.
             msg = f"Warning: DML Split failed: {e}. Returning NaNs."
-            print(msg)
+            warnings.warn(msg, UserWarning)
             # Add warning to stats so it's visible in the result object
             # (which is what the test checks and what a user would inspect programmatically)
             # Also explicitly log to audit trail here to ensure timestamped record
