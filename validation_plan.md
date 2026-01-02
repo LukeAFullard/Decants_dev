@@ -16,15 +16,17 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 ### Protocol A: Synthetic Ground Truth Recovery (Accuracy)
 *Objective: Prove the model can correctly identify and separate signal from noise and confounding variables.*
 
-1.  **Scenario A1: Standard Signal Recovery**
+1.  [x] **Scenario A1: Standard Signal Recovery**
     *   **Input:** $Y_t = Trend_t + \beta \cdot C_t + \epsilon_t$.
     *   **Success Criteria:** Estimated $\hat{\beta}$ within 5% of true $\beta$; Adjusted series matches $Trend_t$ (High $R^2$).
+    *   *Status:* **PASS** (Linear methods), **PASS** (Non-linear methods approx).
 
-2.  **Scenario A2: Non-Linear Interactions**
-    *   **Input:** $Y_t = Trend_t + \sin(C_t) + C_t^2 + \epsilon_t$.
+2.  [x] **Scenario A2: Non-Linear Interactions**
+    *   **Input:** $Y_t = Trend_t + \sin(C_t) + 0.5 C_t^2 + \epsilon_t$.
     *   **Success Criteria:** Non-parametric methods (GAM, GP, FastLoess) must recover the shape of $f(C_t)$. Linear methods (ARIMA, DML-Linear) should fail or warn.
+    *   *Status:* **PASS** (FastLoess), **FAIL/Caveat** (GAM, GP need tuning), **FAIL** (Linear methods as expected).
 
-3.  **Scenario A3: Trend-Covariate Confounding**
+3.  [ ] **Scenario A3: Trend-Covariate Confounding**
     *   **Input:** Both Trend and Covariate grow linearly ($Trend_t = t$, $C_t = t$).
     *   **Success Criteria:** The model should either:
         *   Attribute effect to Trend (conservative for intervention detection).
@@ -34,11 +36,11 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 ### Protocol B: The "Null" Test (Placebo/False Positive Control)
 *Objective: Prove the model does not "hallucinate" effects.*
 
-1.  **Scenario B1: White Noise**
+1.  [ ] **Scenario B1: White Noise**
     *   **Input:** $Y_t \sim N(0,1)$, $C_t \sim N(0,1)$.
     *   **Success Criteria:** Estimated effect $\approx 0$. No statistically significant components detected.
 
-2.  **Scenario B2: Spurious Correlation (Random Walks)**
+2.  [ ] **Scenario B2: Spurious Correlation (Random Walks)**
     *   **Input:** Two independent random walks ($Y_t = \sum \epsilon$, $C_t = \sum \eta$).
     *   **Success Criteria:**
         *   Model should handle non-stationarity (e.g., via differencing or cointegration checks).
@@ -47,30 +49,30 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 ### Protocol C: Stress Testing & Robustness
 *Objective: Ensure stability under extreme conditions.*
 
-1.  **Scenario C1: Adversarial Inputs**
+1.  [ ] **Scenario C1: Adversarial Inputs**
     *   **Input:** Infinite values (`np.inf`), NaNs, massive outliers (100$\sigma$).
     *   **Success Criteria:** Graceful failure (ValueError) or robust handling (RobustScaler/Trimming). *No silent corruption.*
 
-2.  **Scenario C2: Data Sparsity & Gaps**
+2.  [ ] **Scenario C2: Data Sparsity & Gaps**
     *   **Input:** 50% missing data randomly dispersed; large contiguous gap.
     *   **Success Criteria:** Uncertainty intervals should widen significantly in gap regions (GP/Prophet).
 
-3.  **Scenario C3: Multi-Collinearity**
+3.  [ ] **Scenario C3: Multi-Collinearity**
     *   **Input:** $C_1 = X$, $C_2 = X + \epsilon$ (near perfect correlation).
     *   **Success Criteria:** Estimates should remain stable (e.g., via regularization in DML/Ridge) or solver should warn.
 
 ### Protocol D: Defensibility & Audit
 *Objective: Ensure the analysis is legally admissible.*
 
-1.  **Determinism Check**
+1.  [ ] **Determinism Check**
     *   **Action:** Run the full pipeline twice with `random_state=42`.
     *   **Success Criteria:** Output arrays must be identical bit-for-bit.
 
-2.  **Leakage Verification (Time Travel)**
+2.  [ ] **Leakage Verification (Time Travel)**
     *   **Action:** Check if $Prediction_t$ changes when data at $t+k$ is altered.
     *   **Success Criteria:** Zero change for strict time-series models.
 
-3.  **Audit Trail Completeness**
+3.  [ ] **Audit Trail Completeness**
     *   **Action:** Verify `.audit.json` contains:
         *   Source Code Hash (SHA-256).
         *   Library Version.
