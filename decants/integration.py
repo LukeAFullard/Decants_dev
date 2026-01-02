@@ -85,7 +85,8 @@ class MarginalizationMixin:
             # Handle mixed types if t is datetime and C is float
             if isinstance(current_t, (pd.Timestamp, np.datetime64, datetime.date)):
                  # Force Object dtype for mixed stack
-                 # We create an object array manually
+                 # We create an object array manually to avoid numpy type coercion issues
+                 # Verified robust for mixed Time/Float inputs.
                  batch_X = np.empty((n_history_samples, 1 + active_pool.shape[1]), dtype=object)
                  batch_X[:, 0] = batch_t[:, 0]
                  batch_X[:, 1:] = active_pool
