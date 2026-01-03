@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import datetime
+import itertools
 from typing import Optional, Union, Dict, Any
 from sklearn.neighbors import NearestNeighbors
 from sklearn.linear_model import LinearRegression
@@ -28,7 +29,7 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         self.degree = degree # 1 = Linear local fit
         self.scaler = StandardScaler()
         self.interpolator = None
-        self.baseline_c = 0.0 # Effect is relative to this baseline
+        self.baseline_c = None # Effect is relative to this baseline (vector)
         self._t_start = None
 
     def _tricube_weights(self, distances: np.ndarray) -> np.ndarray:
@@ -65,101 +66,119 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
             X_aligned = X_aligned.to_frame()
 
         C = X_aligned.values
+        n_covariates = C.shape[1]
 
-        # 1 covariate restriction
-        if C.shape[1] > 1:
-             raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
+        # Safety Check for Grid Explosion
+        # Grid size = (grid_res)^(1 + n_covariates)
+        # If grid_res=50, n_cov=2 -> 50^3 = 125,000 points (OK)
+        # If n_cov=3 -> 50^4 = 6.25 million (Heavy)
+        # If n_cov=4 -> 300 million (Impossible)
+        total_grid_points = self.grid_res ** (1 + n_covariates)
+        if total_grid_points > 2_000_000:
+             raise ValueError(f"FastLoess dimension explosion: {1 + n_covariates} dimensions with grid_res={self.grid_res} requires {total_grid_points} points. Reduce grid_resolution or use fewer covariates.")
 
         self.t_train = np.array(t).reshape(-1, 1) # Assign self.t_train
-        self.c_train = np.array(C)
-        self.c_train = self.c_train.reshape(-1, 1)
+        self.c_train = np.array(C) # Shape (N, k)
         self.y_train = np.array(y_aligned.values)
-        self.baseline_c = np.median(self.c_train) # Default baseline is median
+        self.baseline_c = np.median(self.c_train, axis=0) # Default baseline is median vector
 
         # Combine and Scale for distance calculations
-        self.X_train = np.hstack([self.t_train, self.c_train])
+        self.X_train = np.hstack([self.t_train, self.c_train]) # Shape (N, 1+k)
         self.X_scaled = self.scaler.fit_transform(self.X_train)
 
         # 2. Define the Grid (The "Skeleton")
         # We create a mesh covering the min/max of time and covariates
+        grid_axes = []
+
+        # Time Axis
         t_min, t_max = self.t_train.min(), self.t_train.max()
-        c_min, c_max = self.c_train.min(), self.c_train.max()
-
-        # Add small buffer to grid to cover edges
         t_pad = (t_max - t_min) * 0.05
-        if t_pad == 0: t_pad = 1.0 # Handle single time point
-
-        c_pad = (c_max - c_min) * 0.05
-        if c_pad == 0: c_pad = 1.0 # Handle constant covariate
-
+        if t_pad == 0: t_pad = 1.0
         t_grid = np.linspace(t_min - t_pad, t_max + t_pad, self.grid_res)
-        c_grid = np.linspace(c_min - c_pad, c_max + c_pad, self.grid_res)
+        grid_axes.append(t_grid)
+
+        # Covariate Axes
+        for k in range(n_covariates):
+            c_vec = self.c_train[:, k]
+            c_min, c_max = c_vec.min(), c_vec.max()
+            c_pad = (c_max - c_min) * 0.05
+            if c_pad == 0: c_pad = 1.0
+            c_grid = np.linspace(c_min - c_pad, c_max + c_pad, self.grid_res)
+            grid_axes.append(c_grid)
 
         # 3. Fit Local Models at Grid Nodes
         n_neighbors = int(self.span * len(self.y_train))
-        n_neighbors = max(n_neighbors, self.degree + 2) # Ensure enough points for regression
+        n_neighbors = max(n_neighbors, self.degree + (1 + n_covariates) + 1) # Ensure enough points for regression
 
         if n_neighbors > len(self.y_train):
              raise ValueError(f"Not enough data for FastLoess with degree={self.degree}. Need at least {n_neighbors} samples, got {len(self.y_train)}.")
 
         nbrs_engine = NearestNeighbors(n_neighbors=n_neighbors).fit(self.X_scaled)
 
-        # Changed: Store Predicted Y instead of Effect to enable Integration
-        grid_preds = np.zeros((self.grid_res, self.grid_res))
+        # Create N-D grid for predictions
+        # Using itertools.product to iterate over all nodes
+        grid_shape = tuple([self.grid_res] * (1 + n_covariates))
+        grid_preds = np.zeros(grid_shape)
 
-        # Loop through grid nodes (This is the heavy lifting, done only once)
-        for i, t_val in enumerate(t_grid):
-            for j, c_val in enumerate(c_grid):
+        # Iterate over all combinations of grid coordinates
+        # enumerate(grid_axis) gives index, val
+        # We need both index (for grid_preds) and val (for prediction)
 
-                # Scale the query point
-                query_point = np.array([[t_val, c_val]])
-                query_scaled = self.scaler.transform(query_point)
+        # Prepare iterators for each axis with (index, value)
+        axis_iters = [enumerate(ax) for ax in grid_axes]
 
-                # Find neighbors
-                dists, indices = nbrs_engine.kneighbors(query_scaled)
-                indices = indices[0]
-                dists = dists[0]
+        # itertools.product(*axis_iters) yields tuples like ((i, t_val), (j, c1_val), (k, c2_val))
+        for item in itertools.product(*axis_iters):
+            # Unpack indices and values
+            indices_tuple = tuple(x[0] for x in item)
+            values_tuple = tuple(x[1] for x in item)
 
-                # Get Local Data
-                X_local = self.X_train[indices] # Unscaled for regression
-                y_local = self.y_train[indices]
-                weights = self._tricube_weights(dists)
+            query_point = np.array([values_tuple]) # Shape (1, 1+k)
+            query_scaled = self.scaler.transform(query_point)
 
-                # Fit Weighted Linear Regression
-                # Model: y = b0 + b1*t + b2*c
-                reg = LinearRegression()
-                try:
-                    reg.fit(X_local, y_local, sample_weight=weights)
+            # Find neighbors
+            dists, indices = nbrs_engine.kneighbors(query_scaled)
+            indices = indices[0]
+            dists = dists[0]
 
-                    # Calculate Predicted Y at this Grid Node
-                    prediction = reg.predict(query_point)[0]
-                    grid_preds[i, j] = prediction
-                except Exception:
-                    # Fallback if fit fails (e.g. singular matrix): Use Weighted Mean of local neighborhood.
-                    # This preserves surface continuity better than global mean or zero.
-                    if len(y_local) > 0:
-                         # Normalize weights for average
-                         w_sum = np.sum(weights)
-                         if w_sum > 0:
-                            grid_preds[i, j] = np.average(y_local, weights=weights)
-                         else:
-                            grid_preds[i, j] = np.mean(y_local)
-                    else:
-                         # Should not happen if n_neighbors > 0, but as last resort
-                         grid_preds[i, j] = np.mean(self.y_train)
+            # Get Local Data
+            X_local = self.X_train[indices] # Unscaled for regression
+            y_local = self.y_train[indices]
+            weights = self._tricube_weights(dists)
+
+            # Fit Weighted Linear Regression
+            # Model: y = b0 + b1*t + b2*c1 + ...
+            reg = LinearRegression()
+            try:
+                reg.fit(X_local, y_local, sample_weight=weights)
+                prediction = reg.predict(query_point)[0]
+                grid_preds[indices_tuple] = prediction
+            except Exception:
+                # Fallback
+                if len(y_local) > 0:
+                     w_sum = np.sum(weights)
+                     if w_sum > 0:
+                        grid_preds[indices_tuple] = np.average(y_local, weights=weights)
+                     else:
+                        grid_preds[indices_tuple] = np.mean(y_local)
+                else:
+                     grid_preds[indices_tuple] = np.mean(self.y_train)
 
         # 4. Create Interpolator
-        # We use nearest extrapolation to avoid crashing at edges if we are slightly outside grid,
-        # but the local regression handles the trend logic.
-        # RegularGridInterpolator requires grid points to be strictly ascending.
+        # RegularGridInterpolator works for N dimensions
+        # grid_axes is tuple of 1D arrays
         self.interpolator = RegularGridInterpolator(
-            (t_grid, c_grid), grid_preds,
+            tuple(grid_axes), grid_preds,
             method='linear',
             bounds_error=False,
             fill_value=None
         )
 
-        self._log_event("fit_complete", {"grid_res": self.grid_res, "span": self.span})
+        self._log_event("fit_complete", {
+            "grid_res": self.grid_res,
+            "span": self.span,
+            "n_covariates": n_covariates
+        })
         return self
 
     def transform(self, y: pd.Series, X: Union[pd.DataFrame, pd.Series]) -> DecantResult:
@@ -188,16 +207,21 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         t, _ = prepare_time_feature(common_idx, self._t_start)
         C = X_aligned.values
 
-        # 1 covariate restriction
-        if C.shape[1] > 1:
-             raise ValueError("FastLoessDecanter currently supports only 1 covariate column.")
+        # Verify dimensions match training
+        if C.shape[1] != self.c_train.shape[1]:
+             raise ValueError(f"Mismatch in covariate dimensions. Fit on {self.c_train.shape[1]}, Transform on {C.shape[1]}.")
 
         # Look up the predicted Y for every actual data point
-        points = np.column_stack((t, C.ravel()))
+        points = np.column_stack((t, C)) # Shape (N, 1+k)
         estimated_preds = self.interpolator(points)
 
         # Look up the predicted Y for Baseline Scenario
-        baseline_points = np.column_stack((t, np.full(len(t), self.baseline_c)))
+        # Baseline point is [t, median_c1, median_c2...]
+        # Construct baseline matrix
+        n_samples = len(t)
+        baseline_C_matrix = np.tile(self.baseline_c, (n_samples, 1)) # Shape (N, k)
+        baseline_points = np.column_stack((t, baseline_C_matrix))
+
         baseline_preds = self.interpolator(baseline_points)
 
         # Handle NaNs
@@ -218,7 +242,7 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
             covariate_effect=pd.Series(estimated_effects, index=common_idx, name="covariate_effect"),
             model=self.interpolator,
             stats={
-                "baseline_c": self.baseline_c,
+                "baseline_c": self.baseline_c.tolist(),
                 "span": self.span,
                 "grid_res": self.grid_res
             }
@@ -232,9 +256,7 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
             "span": self.span,
             "grid_resolution": self.grid_res,
             "degree": self.degree,
-            "baseline_c": self.baseline_c,
-            # We could serialize grid_values if we wanted, but it might be large.
-            # "grid_values": self.interpolator.values.tolist() if self.interpolator else None
+            "baseline_c": self.baseline_c.tolist() if self.baseline_c is not None else None,
         }
 
     def predict_batch(self, X):
@@ -263,6 +285,10 @@ class FastLoessDecanter(BaseDecanter, MarginalizationMixin):
         # Explicitly cast covariates to float to avoid object-dtype errors in interpolator
         # This handles cases where mixed types in stack caused object array
         numeric_c = X_c.astype(float)
+
+        # Check dimensions
+        if numeric_c.ndim == 1:
+             numeric_c = numeric_c.reshape(-1, 1)
 
         # Re-stack
         X_final = np.column_stack([numeric_t, numeric_c])
