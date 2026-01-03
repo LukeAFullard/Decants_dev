@@ -52,9 +52,10 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 ### Protocol C: Stress Testing & Robustness
 *Objective: Ensure stability under extreme conditions.*
 
-1.  [ ] **Scenario C1: Adversarial Inputs**
+1.  [x] **Scenario C1: Adversarial Inputs**
     *   **Input:** Infinite values (`np.inf`), NaNs, massive outliers (100$\sigma$).
     *   **Success Criteria:** Graceful failure (ValueError) or robust handling (RobustScaler/Trimming). *No silent corruption.*
+    *   *Status:* **PASS**. Models correctly raise `ValueError` or `MissingDataError` for NaNs/Infs. Prophet crashes with Stan error (safe but ugly). All models survive outliers. See `validation/protocol_C_stress_test/REPORT_C1_ADVERSARIAL.md`.
 
 2.  [ ] **Scenario C2: Data Sparsity & Gaps**
     *   **Input:** 50% missing data randomly dispersed; large contiguous gap.

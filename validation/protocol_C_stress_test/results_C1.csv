@@ -1,0 +1,53 @@
+Case,Model,Status,Outcome
+NaNs,DoubleML,PASS (Graceful Error),ValueError: Input X contains NaN.
+NaNs,GAM,PASS (Graceful Error),ValueError: X data must not contain Inf nor NaN
+NaNs,Prophet,PASS (Graceful Error),ValueError: Found NaN in column 'c1'
+NaNs,ML (RandomForest),PASS (Handled),Completed successfully
+NaNs,ARIMA,FAIL (Crash),MissingDataError: exog contains inf or nans
+NaNs,FastLoess,PASS (Graceful Error),ValueError: Input X contains NaN.
+NaNs,GP,PASS (Graceful Error),ValueError: Input X contains NaN.
+Infs,DoubleML,PASS (Graceful Error),ValueError: Input X contains infinity or a value too large for dtype('float64').
+Infs,GAM,PASS (Graceful Error),ValueError: X data must not contain Inf nor NaN
+Infs,Prophet,FAIL (Crash),"RuntimeError: Error during optimization! Command '/home/jules/.pyenv/versions/3.12.12/lib/python3.12/site-packages/prophet/stan_model/prophet_model.bin random seed=35079 data file=/tmp/tmpjtpub0u8/vd4esjbl.json init=/tmp/tmpjtpub0u8/94qoh588.json output file=/tmp/tmpjtpub0u8/prophet_model_4gcp6mt/prophet_model-20260103005126.csv method=optimize algorithm=newton iter=10000' failed: console log output:
+
+method = optimize
+  optimize
+    algorithm = newton
+      newton
+    jacobian = false (Default)
+    iter = 10000
+    save_iterations = false (Default)
+id = 1 (Default)
+data
+  file = /tmp/tmpjtpub0u8/vd4esjbl.json
+init = /tmp/tmpjtpub0u8/94qoh588.json
+random
+  seed = 35079
+output
+  file = /tmp/tmpjtpub0u8/prophet_model_4gcp6mt/prophet_model-20260103005126.csv
+  diagnostic_file =  (Default)
+  refresh = 100 (Default)
+  sig_figs = 8 (Default)
+  profile_file = profile.csv (Default)
+  save_cmdstan_config = false (Default)
+num_threads = 1 (Default)
+
+Rejecting initial value:
+  Error evaluating the log probability at the initial value.
+Exception: normal_id_glm_lpdf: Intercept[1] is nan, but must be finite! (in 'prophet.stan', line 137, column 2 to line 142, column 4)
+
+User-specified initialization failed.
+ Try specifying new initial values, using partially specialized initialization, reducing the range of constrained values, or reparameterizing the model.
+Initialization failed.
+"
+Infs,ML (RandomForest),PASS (Graceful Error),ValueError: Input X contains infinity or a value too large for dtype('float32').
+Infs,ARIMA,FAIL (Crash),MissingDataError: exog contains inf or nans
+Infs,FastLoess,PASS (Graceful Error),ValueError: Input X contains infinity or a value too large for dtype('float64').
+Infs,GP,PASS (Graceful Error),ValueError: Input X contains infinity or a value too large for dtype('float64').
+Outliers,DoubleML,PASS (Handled),Completed successfully
+Outliers,GAM,PASS (Handled),Completed successfully
+Outliers,Prophet,PASS (Handled),Completed successfully
+Outliers,ML (RandomForest),PASS (Handled),Completed successfully
+Outliers,ARIMA,PASS (Handled),Completed successfully
+Outliers,FastLoess,PASS (Handled),Completed successfully
+Outliers,GP,PASS (Handled),Completed successfully
