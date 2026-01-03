@@ -37,9 +37,10 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 ### Protocol B: The "Null" Test (Placebo/False Positive Control)
 *Objective: Prove the model does not "hallucinate" effects.*
 
-1.  [ ] **Scenario B1: White Noise**
+1.  [x] **Scenario B1: White Noise**
     *   **Input:** $Y_t \sim N(0,1)$, $C_t \sim N(0,1)$.
     *   **Success Criteria:** Estimated effect $\approx 0$. No statistically significant components detected.
+    *   *Status:* **PASS with Caveats**. DoubleML, ARIMA, Prophet pass (RMSE < 0.2). ML (RandomForest) and GAM show slight overfitting to noise (RMSE ~0.3). See `validation/protocol_B_null_test/REPORT_B1_WHITE_NOISE.md`.
 
 2.  [ ] **Scenario B2: Spurious Correlation (Random Walks)**
     *   **Input:** Two independent random walks ($Y_t = \sum \epsilon$, $C_t = \sum \eta$).
