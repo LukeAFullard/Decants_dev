@@ -65,7 +65,7 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 3.  [x] **Scenario C3: Multi-Collinearity**
     *   **Input:** $C_1 = X$, $C_2 = X + \epsilon$ (near perfect correlation).
     *   **Success Criteria:** Estimates should remain stable (e.g., via regularization in DML/Ridge) or solver should warn.
-    *   *Status:* **PASS**. ARIMA, GAM, Prophet remain stable. DoubleML and ML (RandomForest) show increased variance/RMSE (WARN), suggesting feature selection is needed. See `validation/protocol_C_stress_test/REPORT_C3_MULTICOLLINEARITY.md`.
+    *   *Status:* **PASS**. ARIMA, GAM, Prophet, and FastLoess remain stable. DoubleML and ML (RandomForest) show increased variance/RMSE (WARN), suggesting feature selection is needed. See `validation/protocol_C_stress_test/REPORT_C3_MULTICOLLINEARITY.md`.
 
 ### Protocol D: Defensibility & Audit
 *Objective: Ensure the analysis is legally admissible.*

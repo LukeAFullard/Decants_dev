@@ -59,18 +59,13 @@ def run_validation():
     corr = df['c1'].corr(df['c2'])
     print(f"Correlation(C1, C2): {corr:.6f}")
 
-    # Decanters to test
-    # FastLoess supports 1 covariate? If so we skip C2 or it fails?
-    # Based on previous tests, FastLoess raises ValueError for >1 covariate.
-    # So we will skip FastLoess for this 2-covariate test.
-
     decanters = {
         "DoubleML": DoubleMLDecanter(random_state=RANDOM_STATE),
         "GAM": GamDecanter(),
         "Prophet": ProphetDecanter(),
         "ML (RandomForest)": MLDecanter(estimator=RandomForestRegressor(n_estimators=100, random_state=RANDOM_STATE)),
         "ARIMA": ArimaDecanter(order=(1,0,0)),
-        # "FastLoess": FastLoessDecanter(), # Skips as it only supports 1D
+        "FastLoess": FastLoessDecanter(grid_resolution=20), # Lower res for multidim speed
         "GP": GPDecanter(random_state=RANDOM_STATE)
     }
 
@@ -83,11 +78,6 @@ def run_validation():
 
         try:
             # Fit/Transform with BOTH C1 and C2
-            # Models should figure out that they contain same info.
-            # Total effect should match 2*C1.
-            # If model splits beta=1 to C1 and beta=1 to C2, that's fine for total effect.
-            # If model explodes (beta=1000 to C1, beta=-998 to C2), total effect might still be ok but variance high?
-
             result = decanter.fit_transform(y=df['y'], X=df[['c1', 'c2']])
 
             effect_est = result.covariate_effect.fillna(0)
@@ -95,10 +85,6 @@ def run_validation():
 
             # RMSE of Total Effect
             rmse = np.sqrt(mean_squared_error(true_effect, effect_est))
-
-            # Check for stability/explosion?
-            # Hard to inspect internal coefficients generically for all models.
-            # But if RMSE is low, then the explosion didn't destroy prediction.
 
             status = "PASS" if rmse < 0.5 else "WARN"
 

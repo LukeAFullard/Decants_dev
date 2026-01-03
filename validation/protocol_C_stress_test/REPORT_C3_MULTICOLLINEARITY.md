@@ -58,23 +58,20 @@ Collinear features cause instability in Ordinary Least Squares (OLS), leading to
 | Prophet | 0.123 | **PASS** |
 | ML (RF) | 1.761 | **WARN** (Unstable) |
 | ARIMA | 0.026 | **PASS** |
+| FastLoess | 0.074 | **PASS** |
 | GP | NaN | **ERROR** (Dim Mismatch) |
 
 **Observations:**
-*   **ARIMA, GAM, Prophet** are highly robust to collinearity. They correctly identify the signal without exploding. ARIMA likely puts weight on one or splits it, but the prediction is stable.
+*   **ARIMA, GAM, Prophet, FastLoess** are highly robust to collinearity. They correctly identify the signal without exploding. FastLoess (using multivariate grid interpolation) successfully navigates the correlated space.
 *   **DoubleML** struggles (RMSE 1.66). While it uses Ridge Regression internally (which handles collinearity), the cross-fitting process on small data (N=120) combined with redundant features seems to introduce instability or variance in the residualization.
 *   **ML (RandomForest)** also struggles (RMSE 1.76). Random Forests handle collinearity by randomly selecting one feature or the other at each split. This should be stable for prediction, but perhaps the small sample size + time series splitting makes the OOS predictions noisy.
 
 ## 7. Visual Evidence
 *Plots generated in `validation/protocol_C_stress_test/`*
 
-**Example: ARIMA (PASS)**
-![ARIMA](plot_C3_ARIMA.png)
+**Example: FastLoess (PASS)**
+![FastLoess](plot_C3_FastLoess.png)
 *Effect tracks the signal perfectly.*
-
-**Example: DoubleML (WARN)**
-![DoubleML](plot_C3_DoubleML.png)
-*Effect is noisy and deviates from truth.*
 
 ## 8. Defensibility Check
 - [x] **Audit Log Present:** Yes
@@ -83,7 +80,7 @@ Collinear features cause instability in Ordinary Least Squares (OLS), leading to
 
 ## 9. Conclusion
 **Analysis:**
-For datasets with highly correlated features, **ARIMA**, **GAM**, and **Prophet** are the safest choices. **DoubleML** and **RandomForest** should be used with caution; it is recommended to drop redundant features (using VIF or correlation checks) before passing them to these models.
+For datasets with highly correlated features, **ARIMA**, **GAM**, **Prophet**, and **FastLoess** are the safest choices. **DoubleML** and **RandomForest** should be used with caution; it is recommended to drop redundant features (using VIF or correlation checks) before passing them to these models.
 
 **Pass/Fail Status:**
 - [x] **PASS with Caveats**

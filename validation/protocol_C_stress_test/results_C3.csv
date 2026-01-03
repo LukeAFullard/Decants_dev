@@ -4,4 +4,5 @@ GAM,0.0436082062651399,PASS
 Prophet,0.12297417518843864,PASS
 ML (RandomForest),1.7607565531141356,WARN
 ARIMA,0.02617518806619161,PASS
+FastLoess,0.07427579115438834,PASS
 GP,,ERROR: Anisotropic kernel must have the same number of dimensions as data (2!=3)
