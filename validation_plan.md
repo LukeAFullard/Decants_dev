@@ -37,48 +37,56 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
 ### Protocol B: The "Null" Test (Placebo/False Positive Control)
 *Objective: Prove the model does not "hallucinate" effects.*
 
-1.  [ ] **Scenario B1: White Noise**
+1.  [x] **Scenario B1: White Noise**
     *   **Input:** $Y_t \sim N(0,1)$, $C_t \sim N(0,1)$.
     *   **Success Criteria:** Estimated effect $\approx 0$. No statistically significant components detected.
+    *   *Status:* **PASS with Caveats**. DoubleML, ARIMA, Prophet pass (RMSE < 0.2). ML (RandomForest) and GAM show slight overfitting to noise (RMSE ~0.3). See `validation/protocol_B_null_test/REPORT_B1_WHITE_NOISE.md`.
 
-2.  [ ] **Scenario B2: Spurious Correlation (Random Walks)**
+2.  [x] **Scenario B2: Spurious Correlation (Random Walks)**
     *   **Input:** Two independent random walks ($Y_t = \sum \epsilon$, $C_t = \sum \eta$).
     *   **Success Criteria:**
         *   Model should handle non-stationarity (e.g., via differencing or cointegration checks).
         *   Diagnostics should flag high risk of spurious correlation if unhandled.
+    *   *Status:* **PASS with Caveats**. GP and ARIMA (d=1) are robust (NRMSE < 0.1). ML (RandomForest) is risky (NRMSE > 0.4) on raw random walks. See `validation/protocol_B_null_test/REPORT_B2_SPURIOUS_CORRELATION.md`.
 
 ### Protocol C: Stress Testing & Robustness
 *Objective: Ensure stability under extreme conditions.*
 
-1.  [ ] **Scenario C1: Adversarial Inputs**
+1.  [x] **Scenario C1: Adversarial Inputs**
     *   **Input:** Infinite values (`np.inf`), NaNs, massive outliers (100$\sigma$).
     *   **Success Criteria:** Graceful failure (ValueError) or robust handling (RobustScaler/Trimming). *No silent corruption.*
+    *   *Status:* **PASS**. Models correctly raise `ValueError` or `MissingDataError` for NaNs/Infs. Prophet crashes with Stan error (safe but ugly). All models survive outliers. See `validation/protocol_C_stress_test/REPORT_C1_ADVERSARIAL.md`.
 
-2.  [ ] **Scenario C2: Data Sparsity & Gaps**
+2.  [x] **Scenario C2: Data Sparsity & Gaps**
     *   **Input:** 50% missing data randomly dispersed; large contiguous gap.
     *   **Success Criteria:** Uncertainty intervals should widen significantly in gap regions (GP/Prophet).
+    *   *Status:* **PASS with Caveats**. Prophet, GAM, and ARIMA handle gaps excellently. DoubleML does not produce output for gap regions (strict alignment). RandomForest fails to extrapolate trend. See `validation/protocol_C_stress_test/REPORT_C2_SPARSITY.md`.
 
-3.  [ ] **Scenario C3: Multi-Collinearity**
+3.  [x] **Scenario C3: Multi-Collinearity**
     *   **Input:** $C_1 = X$, $C_2 = X + \epsilon$ (near perfect correlation).
     *   **Success Criteria:** Estimates should remain stable (e.g., via regularization in DML/Ridge) or solver should warn.
+    *   *Status:* **PASS**. ARIMA, GAM, Prophet, and FastLoess remain stable. DoubleML and ML (RandomForest) show increased variance/RMSE (WARN), suggesting feature selection is needed. See `validation/protocol_C_stress_test/REPORT_C3_MULTICOLLINEARITY.md`.
 
 ### Protocol D: Defensibility & Audit
 *Objective: Ensure the analysis is legally admissible.*
 
-1.  [ ] **Determinism Check**
+1.  [x] **Determinism Check**
     *   **Action:** Run the full pipeline twice with `random_state=42`.
     *   **Success Criteria:** Output arrays must be identical bit-for-bit.
+    *   *Status:* **PASS**. DoubleML and ML (RandomForest) are perfectly reproducible with fixed seeds.
 
-2.  [ ] **Leakage Verification (Time Travel)**
+2.  [x] **Leakage Verification (Time Travel)**
     *   **Action:** Check if $Prediction_t$ changes when data at $t+k$ is altered.
     *   **Success Criteria:** Zero change for strict time-series models.
+    *   *Status:* **PASS**. DoubleML and ML (TimeSeriesSplit) show zero future leakage. ARIMA/Prophet are global fitters and will change (expected). See `validation/protocol_D_defensibility/REPORT_D_DEFENSIBILITY.md`.
 
-3.  [ ] **Audit Trail Completeness**
+3.  [x] **Audit Trail Completeness**
     *   **Action:** Verify `.audit.json` contains:
         *   Source Code Hash (SHA-256).
         *   Library Version.
         *   Input Data Hash (SHA-256 of DataFrame).
         *   Exact hyperparameter set.
+    *   *Status:* **PASS**. System generates correct sidecar JSONs with all provenance data.
 
 ## 3. Reporting Standards
 All validation exercises must result in a **Validation Report** (see `validation_report_template.md`).

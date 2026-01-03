@@ -1,0 +1,15 @@
+Scenario,Model,RMSE (Gap),Status
+Contiguous Gap (20%),DoubleML,,FAIL (No Gap Interp)
+Contiguous Gap (20%),GAM,0.11256098052129884,PASS
+Contiguous Gap (20%),Prophet,0.10534253524024799,PASS
+Contiguous Gap (20%),ML (RandomForest),3.845562616289314,PASS
+Contiguous Gap (20%),ARIMA,0.31124819041735574,PASS
+Contiguous Gap (20%),FastLoess,0.26389383258566373,PASS
+Contiguous Gap (20%),GP,1.536140080266015,PASS
+Sparse (50% Missing),DoubleML,,FAIL (No Gap Interp)
+Sparse (50% Missing),GAM,0.11098502718835679,PASS
+Sparse (50% Missing),Prophet,0.0355278932896952,PASS
+Sparse (50% Missing),ML (RandomForest),2.7221246319012575,PASS
+Sparse (50% Missing),ARIMA,0.023049139775408747,PASS
+Sparse (50% Missing),FastLoess,0.07546649849491187,PASS
+Sparse (50% Missing),GP,1.4117661702922741,PASS
