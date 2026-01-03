@@ -57,9 +57,10 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
     *   **Success Criteria:** Graceful failure (ValueError) or robust handling (RobustScaler/Trimming). *No silent corruption.*
     *   *Status:* **PASS**. Models correctly raise `ValueError` or `MissingDataError` for NaNs/Infs. Prophet crashes with Stan error (safe but ugly). All models survive outliers. See `validation/protocol_C_stress_test/REPORT_C1_ADVERSARIAL.md`.
 
-2.  [ ] **Scenario C2: Data Sparsity & Gaps**
+2.  [x] **Scenario C2: Data Sparsity & Gaps**
     *   **Input:** 50% missing data randomly dispersed; large contiguous gap.
     *   **Success Criteria:** Uncertainty intervals should widen significantly in gap regions (GP/Prophet).
+    *   *Status:* **PASS with Caveats**. Prophet, GAM, and ARIMA handle gaps excellently. DoubleML does not produce output for gap regions (strict alignment). RandomForest fails to extrapolate trend. See `validation/protocol_C_stress_test/REPORT_C2_SPARSITY.md`.
 
 3.  [ ] **Scenario C3: Multi-Collinearity**
     *   **Input:** $C_1 = X$, $C_2 = X + \epsilon$ (near perfect correlation).
