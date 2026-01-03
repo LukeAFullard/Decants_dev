@@ -42,11 +42,12 @@ To be suitable for regulatory use (e.g., following principles from **SR 11-7** o
     *   **Success Criteria:** Estimated effect $\approx 0$. No statistically significant components detected.
     *   *Status:* **PASS with Caveats**. DoubleML, ARIMA, Prophet pass (RMSE < 0.2). ML (RandomForest) and GAM show slight overfitting to noise (RMSE ~0.3). See `validation/protocol_B_null_test/REPORT_B1_WHITE_NOISE.md`.
 
-2.  [ ] **Scenario B2: Spurious Correlation (Random Walks)**
+2.  [x] **Scenario B2: Spurious Correlation (Random Walks)**
     *   **Input:** Two independent random walks ($Y_t = \sum \epsilon$, $C_t = \sum \eta$).
     *   **Success Criteria:**
         *   Model should handle non-stationarity (e.g., via differencing or cointegration checks).
         *   Diagnostics should flag high risk of spurious correlation if unhandled.
+    *   *Status:* **PASS with Caveats**. GP and ARIMA (d=1) are robust (NRMSE < 0.1). ML (RandomForest) is risky (NRMSE > 0.4) on raw random walks. See `validation/protocol_B_null_test/REPORT_B2_SPURIOUS_CORRELATION.md`.
 
 ### Protocol C: Stress Testing & Robustness
 *Objective: Ensure stability under extreme conditions.*
