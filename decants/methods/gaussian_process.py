@@ -196,10 +196,21 @@ class GPDecanter(BaseDecanter, MarginalizationMixin):
         X_c = X[:, 1:]
 
         # 1. Prepare Time
-        # Ensure Time is numeric relative to t_start
-        # If the input was constructed with timestamps, X_t elements are Timestamps
-        if isinstance(X_t[0], (pd.Timestamp, np.datetime64, datetime.datetime, datetime.date)):
-             idx = pd.Index(X_t)
+        # Robust check for datetime-like objects in the array
+        is_datetime = False
+        if X_t.dtype == object and len(X_t) > 0:
+             # Check the first element
+             first_elem = X_t[0]
+             if isinstance(first_elem, (pd.Timestamp, datetime.datetime, datetime.date, np.datetime64)):
+                  is_datetime = True
+             elif isinstance(first_elem, (int, np.integer)) and self._t_start is not None:
+                  if first_elem > 1e16:
+                       is_datetime = True
+        elif np.issubdtype(X_t.dtype, np.datetime64):
+             is_datetime = True
+
+        if is_datetime:
+             idx = pd.to_datetime(X_t)
              # Reuse prepare_time_feature but handle the fact it expects an Index
              numeric_t, _ = prepare_time_feature(idx, self._t_start)
         else:
