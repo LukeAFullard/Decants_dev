@@ -1,7 +1,11 @@
-Test,Model,Status
-Determinism,DoubleML,PASS
-Determinism,ML,PASS
-Leakage,DoubleML (TS),PASS
-Leakage,ARIMA,FAIL (Leakage Detected)
-Leakage,ML (RF),PASS
-Audit,Base,PASS
+Test,Model,Status,MAE_Diff
+Determinism,DoubleML,PASS,
+Determinism,ML,PASS,
+Leakage,DoubleML (TS),PASS,
+Leakage,ARIMA,FAIL (Leakage Detected),
+Leakage,ML (RF),PASS,
+Audit,Base,PASS,
+Marginalization,DoubleML,DIFFERENT,1.163127003288128
+Marginalization,GAM,ERROR,
+Marginalization,Prophet,DIFFERENT,2.980254764326739
+Marginalization,ML (RF),DIFFERENT,1.4132255109258387

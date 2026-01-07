@@ -5,6 +5,7 @@ import hashlib
 import os
 import sys
 import tempfile
+import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor
 
 # Ensure we can import decants
@@ -37,6 +38,37 @@ def generate_data(n, seed=42):
         'date': dates,
         'y': y,
         'c1': c1
+    })
+    df.set_index('date', inplace=True)
+    return df
+
+def generate_interaction_data(n, seed=42):
+    """
+    Generates data where the covariate effect depends on time (Interaction).
+    Marginalization (Integration) should handle this differently than simple subtraction
+    if the model captures the interaction.
+    """
+    rng = np.random.default_rng(seed)
+    t = np.arange(n)
+
+    # Trend
+    trend = 0.05 * t
+
+    # Covariate with time-varying effect (Interaction)
+    # Effect starts at 0.5 and grows to 2.5
+    beta_t = 0.5 + 2.0 * (t / n)
+    c1 = np.random.uniform(-1, 1, n)
+
+    # Y = Trend + Beta(t)*C + Noise
+    y = trend + beta_t * c1 + rng.standard_normal(n) * 0.1
+
+    dates = pd.date_range(start="2020-01-01", periods=n, freq="ME")
+    df = pd.DataFrame({
+        'date': dates,
+        'y': y,
+        'c1': c1,
+        'true_trend': trend,
+        'true_effect': beta_t * c1
     })
     df.set_index('date', inplace=True)
     return df
@@ -191,11 +223,95 @@ def check_audit_completeness():
 
         return [{"Test": "Audit", "Model": "Base", "Status": final_status}]
 
+def check_marginalization_effect():
+    print("\n--- Test D4: Marginalization vs Forensic Mode ---")
+    # Use Interaction Data where Beta varies with time.
+    # Standard linear models might fail to capture this unless they are local.
+    # Marginalization (integration) averages over the covariate distribution.
+
+    df = generate_interaction_data(N_SAMPLES, seed=RANDOM_STATE)
+
+    models = {
+        "DoubleML": DoubleMLDecanter(random_state=RANDOM_STATE),
+        "GAM": GamDecanter(),
+        "Prophet": ProphetDecanter(),
+        "ML (RF)": MLDecanter(estimator=RandomForestRegressor(n_estimators=50, random_state=RANDOM_STATE))
+    }
+
+    results = []
+
+    # Setup Plot
+    fig, axes = plt.subplots(len(models), 1, figsize=(10, 4 * len(models)), sharex=True)
+    if len(models) == 1: axes = [axes]
+
+    for i, (name, model) in enumerate(models.items()):
+        print(f"  Running {name}...")
+
+        # 1. Forensic Mode (Standard fit_transform)
+        # This calculates Adjusted = y - Effect(t, C_t)
+        res_forensic = model.fit_transform(df['y'], df[['c1']])
+
+        # 2. Strategic Mode (Marginalization)
+        # This calculates Adjusted = E[y | t, distribution(C)]
+        # For this to be different, C must vary or Effect must vary.
+        # In this dataset, C is random uniform.
+        try:
+            # We pass the full history as the pool
+            y_integrated = model.transform_integrated(
+                t=df.index,
+                C=df[['c1']],
+                n_samples=50, # Lower samples for speed in test
+                random_state=RANDOM_STATE
+            )
+
+            # Create a Series for plotting
+            strategic_adjusted = pd.Series(y_integrated, index=df.index)
+            strategic_effect = df['y'] - strategic_adjusted
+
+            # Calculate Difference
+            diff = np.abs(res_forensic.adjusted_series - strategic_adjusted).mean()
+            status = "DIFFERENT" if diff > 0.01 else "SIMILAR"
+
+            print(f"    Difference (MAE): {diff:.4f} -> {status}")
+
+            # Plotting
+            ax = axes[i]
+            ax.plot(df.index, df['y'], color='gray', alpha=0.3, label='Original')
+            ax.plot(df.index, df['true_trend'], color='black', linestyle='--', alpha=0.5, label='True Trend')
+            ax.plot(df.index, res_forensic.adjusted_series, color='blue', label='Forensic Adjusted')
+            ax.plot(df.index, strategic_adjusted, color='red', linestyle=':', linewidth=2, label='Strategic (Integrated)')
+
+            ax.set_title(f"{name}: Forensic vs Strategic (MAE Diff: {diff:.3f})")
+            ax.legend()
+
+            results.append({
+                "Test": "Marginalization",
+                "Model": name,
+                "MAE_Diff": diff,
+                "Status": status
+            })
+
+        except Exception as e:
+            print(f"    Failed to run marginalization for {name}: {e}")
+            results.append({
+                "Test": "Marginalization",
+                "Model": name,
+                "MAE_Diff": np.nan,
+                "Status": "ERROR"
+            })
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, "marginalization_comparison.png"))
+    print(f"  Saved comparison plot to {os.path.join(OUTPUT_DIR, 'marginalization_comparison.png')}")
+
+    return results
+
 def run_validation():
     results = []
     results.extend(check_determinism())
     results.extend(check_leakage())
     results.extend(check_audit_completeness())
+    results.extend(check_marginalization_effect())
 
     # Summary Report
     results_df = pd.DataFrame(results)
